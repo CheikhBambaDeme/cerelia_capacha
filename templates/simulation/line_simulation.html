@@ -141,7 +141,20 @@
         <div class="card mt-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-table"></i> Weekly Data</span>
-                <small class="text-muted"><i class="bi bi-gear text-warning"></i> = Config Override Active</small>
+                <div>
+                    <small class="text-muted me-3"><i class="bi bi-gear text-warning"></i> = Config Override Active</small>
+                    <div class="btn-group btn-group-sm" id="exportButtons" style="display: none;">
+                        <button class="btn btn-outline-success" onclick="exportToCSV()" title="Export to CSV">
+                            <i class="bi bi-filetype-csv"></i> CSV
+                        </button>
+                        <button class="btn btn-outline-primary" onclick="exportToExcel()" title="Export to Excel">
+                            <i class="bi bi-file-earmark-excel"></i> Excel
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="exportChartAsImage()" title="Export Chart as Image">
+                            <i class="bi bi-image"></i> Chart
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -174,6 +187,8 @@
     let shiftConfigs = [];
     let allLines = [];
     let overlayClients = [];  // Store client codes for overlay
+    let lastSimulationResult = null;  // Store for export
+    let lastClientOverlays = {};  // Store for export
     
     // Colors for overlay curves
     const overlayColors = [
@@ -395,6 +410,13 @@
     }
 
     function displayResults(result) {
+        // Store results for export
+        lastSimulationResult = result;
+        lastClientOverlays = result.client_overlays || {};
+        
+        // Show export buttons
+        document.getElementById('exportButtons').style.display = 'inline-flex';
+        
         // Update stats
         document.getElementById('avgUtilization').textContent = result.average_utilization + '%';
         document.getElementById('peakUtilization').textContent = result.peak_utilization + '%';
@@ -567,6 +589,157 @@
 
     function formatNumber(num) {
         return parseFloat(num).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    }
+    
+    // Export Functions
+    function exportToCSV() {
+        if (!lastSimulationResult) {
+            alert('No simulation data to export. Run a simulation first.');
+            return;
+        }
+        
+        const dataPoints = lastSimulationResult.data_points;
+        const overlays = lastClientOverlays;
+        
+        // Build CSV headers
+        let headers = ['Week', 'Total Demand'];
+        Object.keys(overlays).forEach(code => {
+            headers.push(code);
+        });
+        headers.push('Capacity', 'Utilization %', 'Status', 'Has Override');
+        
+        // Build CSV rows
+        let csvContent = headers.join(',') + '\n';
+        
+        dataPoints.forEach(dp => {
+            let row = [
+                dp.date,
+                dp.demand
+            ];
+            
+            // Add overlay values
+            Object.entries(overlays).forEach(([code, data]) => {
+                const overlayPoint = data.data_points.find(op => op.date === dp.date);
+                row.push(overlayPoint ? overlayPoint.demand : 0);
+            });
+            
+            row.push(
+                dp.capacity,
+                dp.utilization_percent,
+                dp.over_capacity ? 'Over Capacity' : 'OK',
+                dp.has_override ? 'Yes' : 'No'
+            );
+            
+            csvContent += row.join(',') + '\n';
+        });
+        
+        // Add summary row
+        csvContent += '\n';
+        csvContent += `Summary\n`;
+        csvContent += `Average Utilization,${lastSimulationResult.average_utilization}%\n`;
+        csvContent += `Peak Utilization,${lastSimulationResult.peak_utilization}%\n`;
+        csvContent += `Over-Capacity Weeks,${lastSimulationResult.over_capacity_periods}\n`;
+        csvContent += `Total Capacity,${lastSimulationResult.total_capacity}\n`;
+        csvContent += `Total Demand,${lastSimulationResult.total_demand}\n`;
+        
+        // Download
+        downloadFile(csvContent, 'line_simulation_export.csv', 'text/csv');
+    }
+    
+    function exportToExcel() {
+        if (!lastSimulationResult) {
+            alert('No simulation data to export. Run a simulation first.');
+            return;
+        }
+        
+        const dataPoints = lastSimulationResult.data_points;
+        const overlays = lastClientOverlays;
+        
+        // Build HTML table for Excel
+        let html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">';
+        html += '<head><meta charset="UTF-8"></head><body>';
+        html += '<table border="1">';
+        
+        // Headers
+        html += '<tr style="background-color: #4a90d9; color: white; font-weight: bold;">';
+        html += '<th>Week</th><th>Total Demand</th>';
+        Object.keys(overlays).forEach(code => {
+            html += `<th>${code}</th>`;
+        });
+        html += '<th>Capacity</th><th>Utilization %</th><th>Status</th><th>Has Override</th>';
+        html += '</tr>';
+        
+        // Data rows
+        dataPoints.forEach(dp => {
+            const rowStyle = dp.over_capacity ? 'background-color: #f8d7da;' : (dp.has_override ? 'background-color: #fff3cd;' : '');
+            html += `<tr style="${rowStyle}">`;
+            html += `<td>${dp.date}</td>`;
+            html += `<td>${dp.demand}</td>`;
+            
+            Object.entries(overlays).forEach(([code, data]) => {
+                const overlayPoint = data.data_points.find(op => op.date === dp.date);
+                html += `<td>${overlayPoint ? overlayPoint.demand : 0}</td>`;
+            });
+            
+            html += `<td>${dp.capacity}</td>`;
+            html += `<td>${dp.utilization_percent}%</td>`;
+            html += `<td>${dp.over_capacity ? 'Over Capacity' : 'OK'}</td>`;
+            html += `<td>${dp.has_override ? 'Yes' : 'No'}</td>`;
+            html += '</tr>';
+        });
+        
+        // Summary section
+        html += '<tr><td colspan="8"></td></tr>';
+        html += '<tr style="background-color: #e9ecef; font-weight: bold;"><td colspan="8">Summary</td></tr>';
+        html += `<tr><td>Average Utilization</td><td colspan="7">${lastSimulationResult.average_utilization}%</td></tr>`;
+        html += `<tr><td>Peak Utilization</td><td colspan="7">${lastSimulationResult.peak_utilization}%</td></tr>`;
+        html += `<tr><td>Over-Capacity Weeks</td><td colspan="7">${lastSimulationResult.over_capacity_periods}</td></tr>`;
+        html += `<tr><td>Total Capacity</td><td colspan="7">${lastSimulationResult.total_capacity}</td></tr>`;
+        html += `<tr><td>Total Demand</td><td colspan="7">${lastSimulationResult.total_demand}</td></tr>`;
+        
+        html += '</table></body></html>';
+        
+        // Download as Excel
+        downloadFile(html, 'line_simulation_export.xls', 'application/vnd.ms-excel');
+    }
+    
+    function exportChartAsImage() {
+        if (!simulationChart) {
+            alert('No chart to export. Run a simulation first.');
+            return;
+        }
+        
+        // Create a temporary canvas with white background
+        const canvas = document.getElementById('simulationChart');
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        
+        // Fill white background
+        tempCtx.fillStyle = '#ffffff';
+        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+        
+        // Draw the chart on top
+        tempCtx.drawImage(canvas, 0, 0);
+        
+        const link = document.createElement('a');
+        link.download = 'line_simulation_chart.jpg';
+        link.href = tempCanvas.toDataURL('image/jpeg', 1);
+        link.click();
+    }
+    
+    function downloadFile(content, filename, mimeType) {
+        const blob = new Blob([content], { type: mimeType + ';charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     }
 </script>
 {% endblock %}

@@ -115,8 +115,19 @@
 
         <!-- Data Table -->
         <div class="card mt-4">
-            <div class="card-header">
-                <i class="bi bi-table"></i> Weekly Breakdown
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-table"></i> Weekly Breakdown</span>
+                <div class="btn-group btn-group-sm" id="exportButtons" style="display: none;">
+                    <button class="btn btn-outline-success" onclick="exportToCSV()" title="Export to CSV">
+                        <i class="bi bi-filetype-csv"></i> CSV
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="exportToExcel()" title="Export to Excel">
+                        <i class="bi bi-file-earmark-excel"></i> Excel
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="exportChartAsImage()" title="Export Chart as Image">
+                        <i class="bi bi-image"></i> Chart
+                    </button>
+                </div>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -150,6 +161,7 @@
     let simulationChart = null;
     let shiftConfigs = [];
     let allLines = [];
+    let lastSimulationResult = null;  // Store for export
 
     document.addEventListener('DOMContentLoaded', async function() {
         const today = new Date();
@@ -259,6 +271,10 @@
         document.getElementById('lostDemand').textContent = parseFloat(result.overlay_data?.total_lost_demand || 0).toLocaleString();
         document.getElementById('lostClientName').textContent = result.overlay_data?.lost_client_name || '-';
 
+        // Store results for export
+        lastSimulationResult = result;
+        document.getElementById('exportButtons').style.display = 'inline-flex';
+
         updateChart(result.data_points);
         updateTable(result.data_points);
     }
@@ -359,6 +375,86 @@
                 </td>
             </tr>
         `).join('');
+    }
+    
+    // Export Functions
+    function exportToCSV() {
+        if (!lastSimulationResult) {
+            alert('No simulation data to export. Run a simulation first.');
+            return;
+        }
+        
+        const dataPoints = lastSimulationResult.data_points;
+        let csvContent = 'Week,Original Demand,Lost Demand,New Demand,Capacity,Utilization %,Has Override\n';
+        
+        dataPoints.forEach(dp => {
+            csvContent += `${dp.date},${dp.base_demand || 0},${dp.lost_demand || 0},${dp.demand},${dp.capacity},${dp.utilization_percent},${dp.has_override ? 'Yes' : 'No'}\n`;
+        });
+        
+        csvContent += '\nSummary\n';
+        csvContent += `Average Utilization,${lastSimulationResult.average_utilization}%\n`;
+        csvContent += `Peak Utilization,${lastSimulationResult.peak_utilization}%\n`;
+        csvContent += `Freed Capacity,${lastSimulationResult.freed_capacity || 0}\n`;
+        
+        downloadFile(csvContent, 'lost_client_simulation_export.csv', 'text/csv');
+    }
+    
+    function exportToExcel() {
+        if (!lastSimulationResult) {
+            alert('No simulation data to export. Run a simulation first.');
+            return;
+        }
+        
+        const dataPoints = lastSimulationResult.data_points;
+        let html = '<html><head><meta charset="UTF-8"></head><body><table border="1">';
+        html += '<tr style="background-color: #4a90d9; color: white;"><th>Week</th><th>Original Demand</th><th>Lost Demand</th><th>New Demand</th><th>Capacity</th><th>Utilization %</th><th>Has Override</th></tr>';
+        
+        dataPoints.forEach(dp => {
+            html += `<tr><td>${dp.date}</td><td>${dp.base_demand || 0}</td><td style="color:red">-${dp.lost_demand || 0}</td><td><b>${dp.demand}</b></td><td>${dp.capacity}</td><td>${dp.utilization_percent}%</td><td>${dp.has_override ? 'Yes' : 'No'}</td></tr>`;
+        });
+        
+        html += '<tr><td colspan="7"></td></tr>';
+        html += '<tr style="background-color: #e9ecef;"><td colspan="7"><b>Summary</b></td></tr>';
+        html += `<tr><td>Average Utilization</td><td colspan="6">${lastSimulationResult.average_utilization}%</td></tr>`;
+        html += `<tr><td>Peak Utilization</td><td colspan="6">${lastSimulationResult.peak_utilization}%</td></tr>`;
+        html += `<tr><td>Freed Capacity</td><td colspan="6">${lastSimulationResult.freed_capacity || 0}</td></tr>`;
+        html += '</table></body></html>';
+        
+        downloadFile(html, 'lost_client_simulation_export.xls', 'application/vnd.ms-excel');
+    }
+    
+    function exportChartAsImage() {
+        if (!simulationChart) {
+            alert('No chart to export. Run a simulation first.');
+            return;
+        }
+        
+        // Create a temporary canvas with white background
+        const canvas = document.getElementById('simulationChart');
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        
+        // Fill white background
+        tempCtx.fillStyle = '#ffffff';
+        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+        
+        // Draw the chart on top
+        tempCtx.drawImage(canvas, 0, 0);
+        
+        const link = document.createElement('a');
+        link.download = 'lost_client_simulation_chart.jpg';
+        link.href = tempCanvas.toDataURL('image/jpeg', 1);
+        link.click();
+    }
+    
+    function downloadFile(content, filename, mimeType) {
+        const blob = new Blob([content], { type: mimeType + ';charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        link.click();
     }
 </script>
 {% endblock %}
