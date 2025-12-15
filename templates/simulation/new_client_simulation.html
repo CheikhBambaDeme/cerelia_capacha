@@ -1,0 +1,378 @@
+{% extends 'base.html' %}
+
+{% block title %}New Client Simulation - Cerelia{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-person-plus"></i> New Client Simulation</h2>
+    <button class="btn btn-warning" onclick="runSimulation()">
+        <i class="bi bi-play-fill"></i> Run Simulation
+    </button>
+</div>
+
+<div class="row">
+    <!-- Configuration Panel -->
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-sliders"></i> Configuration
+            </div>
+            <div class="card-body">
+                <!-- Date Range -->
+                <div class="mb-3">
+                    <label class="form-label">Date Range</label>
+                    <div class="row">
+                        <div class="col-6">
+                            <input type="date" class="form-control" id="startDate">
+                        </div>
+                        <div class="col-6">
+                            <input type="date" class="form-control" id="endDate">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Line Selection -->
+                <div class="mb-3">
+                    <label class="form-label">Production Lines</label>
+                    <select class="form-select" id="lineSelect" multiple size="5">
+                    </select>
+                </div>
+
+                <!-- Shift Configuration -->
+                <div class="mb-3">
+                    <label class="form-label">Shift Configurations</label>
+                    <div id="shiftConfigContainer">
+                        <small class="text-muted">Select lines first</small>
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- New Client Demand -->
+                <div class="mb-3">
+                    <label class="form-label text-warning"><i class="bi bi-plus-circle"></i> New Client Weekly Demand *</label>
+                    <input type="number" class="form-control" id="newClientDemand" 
+                           placeholder="Enter weekly demand volume" min="0" step="100">
+                    <small class="text-muted">Units per week for the new client</small>
+                </div>
+
+                <hr>
+
+                <!-- Optional: Remove existing client -->
+                <div class="mb-3">
+                    <label class="form-label text-danger"><i class="bi bi-dash-circle"></i> Remove Client (Optional)</label>
+                    <select class="form-select" id="removeClientSelect">
+                        <option value="">Don't remove any client</option>
+                    </select>
+                    <small class="text-muted">Select if capacity swap is needed</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info Card -->
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6><i class="bi bi-info-circle"></i> How it works</h6>
+                <small class="text-muted">
+                    This simulation shows what happens when you add a new client's demand to your existing production load.
+                    Optionally, you can also simulate removing an existing client to make room for the new one.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Panel -->
+    <div class="col-md-8">
+        <!-- Stats Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stat-card">
+                    <div class="stat-value" id="avgUtilization">-</div>
+                    <div class="stat-label">New Avg Utilization %</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card warning">
+                    <div class="stat-value" id="peakUtilization">-</div>
+                    <div class="stat-label">Peak Utilization %</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card danger">
+                    <div class="stat-value" id="overCapacityPeriods">-</div>
+                    <div class="stat-label">Over-Capacity Weeks</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card success">
+                    <div class="stat-value" id="totalDemand">-</div>
+                    <div class="stat-label">Total Demand</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-graph-up"></i> Demand Impact Analysis
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="simulationChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Table -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <i class="bi bi-table"></i> Weekly Breakdown
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-sm" id="dataTable">
+                        <thead>
+                            <tr>
+                                <th>Week</th>
+                                <th>Base Demand</th>
+                                <th>+ New Client</th>
+                                <th>- Removed</th>
+                                <th>Total Demand</th>
+                                <th>Capacity</th>
+                                <th>Status</th>
+                                <th>Config Override</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="8" class="text-center text-muted">Run simulation to see data</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let simulationChart = null;
+    let shiftConfigs = [];
+    let allLines = [];
+
+    document.addEventListener('DOMContentLoaded', async function() {
+        const today = new Date();
+        const sixMonthsLater = new Date(today);
+        sixMonthsLater.setMonth(sixMonthsLater.getMonth() + 6);
+        
+        document.getElementById('startDate').value = today.toISOString().split('T')[0];
+        document.getElementById('endDate').value = sixMonthsLater.toISOString().split('T')[0];
+
+        await Promise.all([
+            loadLines(),
+            loadClients(),
+            loadShiftConfigs()
+        ]);
+
+        document.getElementById('lineSelect').addEventListener('change', updateShiftConfigUI);
+    });
+
+    async function loadLines() {
+        const data = await fetchAPI('lines/');
+        allLines = data.results || data;
+        const select = document.getElementById('lineSelect');
+        select.innerHTML = allLines.map(line => 
+            `<option value="${line.id}">${line.site_name} - ${line.name}</option>`
+        ).join('');
+    }
+
+    async function loadClients() {
+        const data = await fetchAPI('clients/');
+        const clients = data.results || data;
+        const select = document.getElementById('removeClientSelect');
+        select.innerHTML = '<option value="">Don\'t remove any client</option>' + 
+            clients.map(c => `<option value="${c.id}">${c.name} (Priority: ${c.priority})</option>`).join('');
+    }
+
+    async function loadShiftConfigs() {
+        const data = await fetchAPI('shift-configs/');
+        shiftConfigs = data.results || data;
+    }
+
+    function updateShiftConfigUI() {
+        const container = document.getElementById('shiftConfigContainer');
+        const selectedOptions = Array.from(document.getElementById('lineSelect').selectedOptions);
+        
+        if (selectedOptions.length === 0) {
+            container.innerHTML = '<small class="text-muted">Select lines first</small>';
+            return;
+        }
+
+        container.innerHTML = selectedOptions.map(opt => {
+            const line = allLines.find(l => l.id == opt.value);
+            const hasOverrides = line && line.active_overrides_count > 0;
+            return `
+                <div class="mb-2">
+                    <label class="form-label small">${line ? line.name : 'Line'} ${hasOverrides ? '<span class="badge bg-warning text-dark"><i class="bi bi-wrench"></i> Has Overrides</span>' : ''}</label>
+                    <select class="form-select form-select-sm" data-line-id="${opt.value}">
+                        <option value="override" ${hasOverrides ? 'selected' : ''}>🔧 Use Override Config (date-based)</option>
+                        ${shiftConfigs.map(sc => `<option value="${sc.id}" ${!hasOverrides && line && line.default_shift_config == sc.id ? 'selected' : ''}>${sc.name}</option>`).join('')}
+                    </select>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function runSimulation() {
+        const newDemand = document.getElementById('newClientDemand').value;
+        if (!newDemand || parseFloat(newDemand) <= 0) {
+            alert('Please enter a valid new client weekly demand');
+            return;
+        }
+
+        const lineSelect = document.getElementById('lineSelect');
+        const selectedLineIds = Array.from(lineSelect.selectedOptions).map(opt => parseInt(opt.value));
+        
+        if (selectedLineIds.length === 0) {
+            alert('Please select at least one production line');
+            return;
+        }
+
+        const shiftConfigSelects = document.querySelectorAll('#shiftConfigContainer select');
+        const lineShiftConfigs = Array.from(shiftConfigSelects).map(select => ({
+            line_id: parseInt(select.dataset.lineId),
+            shift_config_id: select.value === 'override' ? null : parseInt(select.value),
+            use_override: select.value === 'override'
+        }));
+
+        const requestData = {
+            line_ids: selectedLineIds,
+            shift_configs: lineShiftConfigs,
+            start_date: document.getElementById('startDate').value,
+            end_date: document.getElementById('endDate').value,
+            new_client_demand: parseFloat(newDemand),
+            remove_client_id: document.getElementById('removeClientSelect').value || null
+        };
+
+        try {
+            const result = await postAPI('/api/simulate/new-client/', requestData);
+            displayResults(result);
+        } catch (error) {
+            console.error('Simulation error:', error);
+            alert('Error running simulation');
+        }
+    }
+
+    function displayResults(result) {
+        document.getElementById('avgUtilization').textContent = result.average_utilization + '%';
+        document.getElementById('peakUtilization').textContent = result.peak_utilization + '%';
+        document.getElementById('overCapacityPeriods').textContent = result.over_capacity_periods;
+        document.getElementById('totalDemand').textContent = parseFloat(result.total_demand).toLocaleString();
+
+        updateChart(result.data_points);
+        updateTable(result.data_points);
+    }
+
+    function updateChart(dataPoints) {
+        const ctx = document.getElementById('simulationChart').getContext('2d');
+        
+        if (simulationChart) simulationChart.destroy();
+
+        // Point colors for capacity - highlight overrides
+        const capacityPointColors = dataPoints.map(dp => 
+            dp.has_override ? '#ffc107' : chartColors.success
+        );
+        const capacityPointRadius = dataPoints.map(dp => 
+            dp.has_override ? 6 : 3
+        );
+
+        simulationChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: dataPoints.map(dp => dp.date),
+                datasets: [
+                    {
+                        label: 'Base Demand',
+                        data: dataPoints.map(dp => parseFloat(dp.base_demand || 0)),
+                        borderColor: chartColors.primary,
+                        backgroundColor: chartColors.primaryLight,
+                        fill: true,
+                        tension: 0.3
+                    },
+                    {
+                        label: 'Total with New Client',
+                        data: dataPoints.map(dp => parseFloat(dp.demand)),
+                        borderColor: chartColors.accent,
+                        backgroundColor: chartColors.accentLight,
+                        fill: false,
+                        tension: 0.3,
+                        borderWidth: 3
+                    },
+                    {
+                        label: 'Capacity',
+                        data: dataPoints.map(dp => parseFloat(dp.capacity)),
+                        borderColor: chartColors.success,
+                        backgroundColor: 'transparent',
+                        borderDash: [5, 5],
+                        fill: false,
+                        tension: 0,
+                        pointBackgroundColor: capacityPointColors,
+                        pointBorderColor: capacityPointColors,
+                        pointRadius: capacityPointRadius,
+                        pointHoverRadius: 8
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            afterBody: function(context) {
+                                const dataIndex = context[0].dataIndex;
+                                const dp = dataPoints[dataIndex];
+                                if (dp.has_override) {
+                                    return ['⚠️ Config override active for this week'];
+                                }
+                                return [];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Units' }
+                    }
+                }
+            }
+        });
+    }
+
+    function updateTable(dataPoints) {
+        const tbody = document.querySelector('#dataTable tbody');
+        tbody.innerHTML = dataPoints.map(dp => `
+            <tr class="${dp.over_capacity ? 'table-danger' : ''}">
+                <td>${dp.date}</td>
+                <td>${parseFloat(dp.base_demand || 0).toLocaleString()}</td>
+                <td class="text-success">+${parseFloat(dp.new_client_demand || 0).toLocaleString()}</td>
+                <td class="text-danger">-${parseFloat(dp.removed_demand || 0).toLocaleString()}</td>
+                <td><strong>${parseFloat(dp.demand).toLocaleString()}</strong></td>
+                <td>${parseFloat(dp.capacity).toLocaleString()}</td>
+                <td>${dp.over_capacity ? '<span class="badge bg-danger">Over</span>' : '<span class="badge bg-success">OK</span>'}</td>
+                <td>
+                    ${dp.has_override 
+                        ? '<span class="badge bg-warning text-dark" title="Custom configuration active"><i class="bi bi-wrench"></i></span>' 
+                        : '<span class="text-muted">-</span>'}
+                </td>
+            </tr>
+        `).join('');
+    }
+</script>
+{% endblock %}

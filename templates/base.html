@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Cerelia Simulation{% endblock %}</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <style>
+        :root {
+            /* Cerelia Brand Colors */
+            --cerelia-primary: #5e3e2f;      /* Brown */
+            --cerelia-secondary: #f5dd1f;    /* Yellow */
+            --cerelia-accent: #ea6d09;       /* Orange */
+            --cerelia-light: #fef9e7;        /* Light yellow tint */
+            --cerelia-dark: #3d2820;         /* Dark brown */
+            
+            /* Status colors */
+            --cerelia-success: #28a745;
+            --cerelia-warning: #ea6d09;
+            --cerelia-danger: #dc3545;
+        }
+        
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .sidebar {
+            min-height: 100vh;
+            background: linear-gradient(180deg, var(--cerelia-primary) 0%, var(--cerelia-dark) 100%);
+        }
+        
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.85);
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin: 4px 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .sidebar .nav-link:hover {
+            background-color: rgba(245, 221, 31, 0.2);
+            color: var(--cerelia-secondary);
+        }
+        
+        .sidebar .nav-link.active {
+            background-color: var(--cerelia-accent);
+            color: white;
+        }
+        
+        .sidebar .nav-link i {
+            margin-right: 10px;
+        }
+        
+        .main-content {
+            padding: 20px 30px;
+        }
+        
+        .card {
+            border: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            border-radius: 12px;
+        }
+        
+        .card-header {
+            background-color: white;
+            border-bottom: 2px solid var(--cerelia-secondary);
+            font-weight: 600;
+            color: var(--cerelia-primary);
+        }
+        
+        .stat-card {
+            text-align: center;
+            padding: 20px;
+            border-left: 4px solid var(--cerelia-primary);
+        }
+        
+        .stat-card .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--cerelia-primary);
+        }
+        
+        .stat-card .stat-label {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+        
+        .stat-card.warning {
+            border-left-color: var(--cerelia-accent);
+        }
+        .stat-card.warning .stat-value { 
+            color: var(--cerelia-accent); 
+        }
+        
+        .stat-card.danger {
+            border-left-color: var(--cerelia-danger);
+        }
+        .stat-card.danger .stat-value { 
+            color: var(--cerelia-danger); 
+        }
+        
+        .stat-card.success {
+            border-left-color: var(--cerelia-success);
+        }
+        .stat-card.success .stat-value { 
+            color: var(--cerelia-success); 
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 400px;
+        }
+        
+        .form-select, .form-control {
+            border-radius: 8px;
+            border-color: #ddd;
+        }
+        
+        .form-select:focus, .form-control:focus {
+            border-color: var(--cerelia-accent);
+            box-shadow: 0 0 0 0.2rem rgba(234, 109, 9, 0.25);
+        }
+        
+        .btn-primary {
+            background-color: var(--cerelia-primary);
+            border-color: var(--cerelia-primary);
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--cerelia-dark);
+            border-color: var(--cerelia-dark);
+        }
+        
+        .btn-success {
+            background-color: var(--cerelia-success);
+            border-color: var(--cerelia-success);
+        }
+        
+        .btn-warning {
+            background-color: var(--cerelia-accent);
+            border-color: var(--cerelia-accent);
+            color: white;
+        }
+        
+        .btn-warning:hover {
+            background-color: #d45e00;
+            border-color: #d45e00;
+            color: white;
+        }
+        
+        .btn-outline-primary {
+            color: var(--cerelia-primary);
+            border-color: var(--cerelia-primary);
+        }
+        
+        .btn-outline-primary:hover {
+            background-color: var(--cerelia-primary);
+            border-color: var(--cerelia-primary);
+        }
+        
+        .logo {
+            padding: 20px;
+            text-align: center;
+            color: var(--cerelia-secondary);
+            font-size: 1.5rem;
+            font-weight: 700;
+            border-bottom: 1px solid rgba(245, 221, 31, 0.3);
+            margin-bottom: 10px;
+        }
+        
+        .logo i {
+            color: var(--cerelia-accent);
+        }
+        
+        h2 {
+            color: var(--cerelia-primary);
+        }
+        
+        h2 i {
+            color: var(--cerelia-accent);
+        }
+        
+        .table-danger {
+            background-color: rgba(220, 53, 69, 0.1) !important;
+        }
+        
+        .badge.bg-danger {
+            background-color: var(--cerelia-danger) !important;
+        }
+        
+        .badge.bg-success {
+            background-color: var(--cerelia-success) !important;
+        }
+        
+        .text-warning {
+            color: var(--cerelia-accent) !important;
+        }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--cerelia-primary);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--cerelia-dark);
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <nav class="col-md-3 col-lg-2 d-md-block sidebar collapse">
+                <div class="logo">
+                    <i class="bi bi-gear-wide-connected"></i> Cerelia
+                </div>
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'dashboard_home' %}active{% endif %}" href="{% url 'dashboard_home' %}">
+                            <i class="bi bi-house-door"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'line_configuration' %}active{% endif %}" href="{% url 'line_configuration' %}">
+                            <i class="bi bi-wrench-adjustable"></i> Line Configuration
+                        </a>
+                    </li>
+                    <hr class="text-white-50 mx-3 my-2">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'line_simulation' %}active{% endif %}" href="{% url 'line_simulation' %}">
+                            <i class="bi bi-bar-chart-line"></i> Line Simulation
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'category_simulation' %}active{% endif %}" href="{% url 'category_simulation' %}">
+                            <i class="bi bi-grid-3x3-gap"></i> Category Simulation
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'new_client_simulation' %}active{% endif %}" href="{% url 'new_client_simulation' %}">
+                            <i class="bi bi-person-plus"></i> New Client
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'lost_client_simulation' %}active{% endif %}" href="{% url 'lost_client_simulation' %}">
+                            <i class="bi bi-person-dash"></i> Lost Client
+                        </a>
+                    </li>
+                    <hr class="text-white-50 mx-3">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/admin/" target="_blank">
+                            <i class="bi bi-sliders"></i> Admin Panel
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/api/" target="_blank">
+                            <i class="bi bi-code-slash"></i> API Browser
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+
+            <!-- Main Content -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-content">
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Global API helper functions
+        const API_BASE = '/api/';
+        
+        async function fetchAPI(endpoint, options = {}) {
+            const response = await fetch(API_BASE + endpoint, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                },
+                ...options
+            });
+            return response.json();
+        }
+        
+        async function postAPI(endpoint, data) {
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            return response.json();
+        }
+        
+        // Cerelia Chart color scheme
+        const chartColors = {
+            primary: 'rgba(94, 62, 47, 1)',        // Brown
+            primaryLight: 'rgba(94, 62, 47, 0.2)',
+            secondary: 'rgba(245, 221, 31, 1)',    // Yellow
+            secondaryLight: 'rgba(245, 221, 31, 0.3)',
+            accent: 'rgba(234, 109, 9, 1)',        // Orange
+            accentLight: 'rgba(234, 109, 9, 0.2)',
+            success: 'rgba(40, 167, 69, 1)',
+            successLight: 'rgba(40, 167, 69, 0.2)',
+            danger: 'rgba(220, 53, 69, 1)',
+            dangerLight: 'rgba(220, 53, 69, 0.2)',
+        };
+    </script>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - Cerelia Simulation{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-speedometer2"></i> Production Simulation Dashboard</h2>
+    <span class="text-muted">Cerelia Capacity Planning Tool</span>
+</div>
+
+<!-- Quick Stats -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="stat-value" id="totalLines">-</div>
+            <div class="stat-label">Production Lines</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="stat-value" id="totalProducts">-</div>
+            <div class="stat-label">Products</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="stat-value" id="totalClients">-</div>
+            <div class="stat-label">Active Clients</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="stat-value" id="totalCategories">-</div>
+            <div class="stat-label">Product Categories</div>
+        </div>
+    </div>
+</div>
+
+<!-- Dashboard Cards -->
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-bar-chart-line"></i> Line Simulation
+            </div>
+            <div class="card-body">
+                <p>Analyze demand on one or multiple production lines under chosen capacity settings.</p>
+                <ul class="text-muted">
+                    <li>Select lines and configure shift patterns</li>
+                    <li>View demand curves for all products on selected lines</li>
+                    <li>Overlay specific client, product, or category demand</li>
+                </ul>
+                <a href="{% url 'line_simulation' %}" class="btn btn-primary">
+                    <i class="bi bi-arrow-right-circle"></i> Open Simulation
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-grid-3x3-gap"></i> Category Simulation
+            </div>
+            <div class="card-body">
+                <p>Analyze demand for a specific product category and capacity coverage.</p>
+                <ul class="text-muted">
+                    <li>Choose product category (Pizza, Pastry, Pancakes...)</li>
+                    <li>Select production lines and set capacity scenarios</li>
+                    <li>Overlay demand for specific articles within category</li>
+                </ul>
+                <a href="{% url 'category_simulation' %}" class="btn btn-success">
+                    <i class="bi bi-arrow-right-circle"></i> Open Simulation
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-person-plus"></i> New Client Simulation
+            </div>
+            <div class="card-body">
+                <p>Evaluate the impact of onboarding a new customer.</p>
+                <ul class="text-muted">
+                    <li>Add new client demand volume to existing load</li>
+                    <li>Identify if capacity swap is needed</li>
+                    <li>See which existing clients might need to be reduced</li>
+                </ul>
+                <a href="{% url 'new_client_simulation' %}" class="btn btn-warning">
+                    <i class="bi bi-arrow-right-circle"></i> Open Simulation
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-person-dash"></i> Lost Client Simulation
+            </div>
+            <div class="card-body">
+                <p>Visualize how capacity is affected if a client leaves.</p>
+                <ul class="text-muted">
+                    <li>Select the client that would be lost</li>
+                    <li>View freed capacity and new utilization rates</li>
+                    <li>Plan for capacity reallocation</li>
+                </ul>
+                <a href="{% url 'lost_client_simulation' %}" class="btn btn-danger">
+                    <i class="bi bi-arrow-right-circle"></i> Open Simulation
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Links -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-lightning-charge"></i> Quick Actions
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <a href="/admin/simulation/productionline/" target="_blank" class="btn btn-outline-primary w-100 mb-2">
+                            <i class="bi bi-gear"></i> Manage Lines
+                        </a>
+                    </div>
+                    <div class="col-md-3">
+                        <a href="/admin/simulation/product/" target="_blank" class="btn btn-outline-primary w-100 mb-2">
+                            <i class="bi bi-box"></i> Manage Products
+                        </a>
+                    </div>
+                    <div class="col-md-3">
+                        <a href="/admin/simulation/client/" target="_blank" class="btn btn-outline-primary w-100 mb-2">
+                            <i class="bi bi-people"></i> Manage Clients
+                        </a>
+                    </div>
+                    <div class="col-md-3">
+                        <a href="/admin/simulation/demandforecast/" target="_blank" class="btn btn-outline-primary w-100 mb-2">
+                            <i class="bi bi-graph-up"></i> Manage Forecasts
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Load dashboard stats
+    async function loadStats() {
+        try {
+            const [lines, products, clients, categories] = await Promise.all([
+                fetchAPI('lines/'),
+                fetchAPI('products/'),
+                fetchAPI('clients/'),
+                fetchAPI('categories/')
+            ]);
+            
+            document.getElementById('totalLines').textContent = lines.results ? lines.results.length : lines.length || 0;
+            document.getElementById('totalProducts').textContent = products.results ? products.results.length : products.length || 0;
+            document.getElementById('totalClients').textContent = clients.results ? clients.results.length : clients.length || 0;
+            document.getElementById('totalCategories').textContent = categories.results ? categories.results.length : categories.length || 0;
+        } catch (error) {
+            console.error('Error loading stats:', error);
+        }
+    }
+    
+    loadStats();
+</script>
+{% endblock %}

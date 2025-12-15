@@ -1,0 +1,368 @@
+{% extends 'base.html' %}
+
+{% block title %}Category Simulation - Cerelia{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-grid-3x3-gap"></i> Category Simulation</h2>
+    <button class="btn btn-success" onclick="runSimulation()">
+        <i class="bi bi-play-fill"></i> Run Simulation
+    </button>
+</div>
+
+<div class="row">
+    <!-- Configuration Panel -->
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-sliders"></i> Configuration
+            </div>
+            <div class="card-body">
+                <!-- Category Selection -->
+                <div class="mb-3">
+                    <label class="form-label">Product Category *</label>
+                    <select class="form-select" id="categorySelect" required>
+                        <option value="">Select a category...</option>
+                    </select>
+                </div>
+
+                <!-- Date Range -->
+                <div class="mb-3">
+                    <label class="form-label">Date Range</label>
+                    <div class="row">
+                        <div class="col-6">
+                            <input type="date" class="form-control" id="startDate">
+                        </div>
+                        <div class="col-6">
+                            <input type="date" class="form-control" id="endDate">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Line Selection -->
+                <div class="mb-3">
+                    <label class="form-label">Production Lines</label>
+                    <select class="form-select" id="lineSelect" multiple size="6">
+                    </select>
+                    <small class="text-muted">Hold Ctrl to select multiple lines</small>
+                </div>
+
+                <!-- Shift Configuration per Line -->
+                <div class="mb-3">
+                    <label class="form-label">Shift Configurations</label>
+                    <div id="shiftConfigContainer">
+                        <small class="text-muted">Select lines first</small>
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- Optional Product Filter -->
+                <div class="mb-3">
+                    <label class="form-label"><i class="bi bi-funnel"></i> Filter by Product (Optional)</label>
+                    <select class="form-select" id="productFilter">
+                        <option value="">All Products in Category</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Panel -->
+    <div class="col-md-8">
+        <!-- Stats Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stat-card">
+                    <div class="stat-value" id="avgUtilization">-</div>
+                    <div class="stat-label">Avg Utilization %</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card warning">
+                    <div class="stat-value" id="peakUtilization">-</div>
+                    <div class="stat-label">Peak Utilization %</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card danger">
+                    <div class="stat-value" id="overCapacityPeriods">-</div>
+                    <div class="stat-label">Over-Capacity Weeks</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card success">
+                    <div class="stat-value" id="categoryName">-</div>
+                    <div class="stat-label">Category</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-graph-up"></i> Category Demand vs Capacity
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="simulationChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Table -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <i class="bi bi-table"></i> Weekly Data
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-sm" id="dataTable">
+                        <thead>
+                            <tr>
+                                <th>Week</th>
+                                <th>Demand</th>
+                                <th>Capacity</th>
+                                <th>Utilization</th>
+                                <th>Status</th>
+                                <th>Config Override</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">Run simulation to see data</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let simulationChart = null;
+    let shiftConfigs = [];
+    let allLines = [];
+
+    document.addEventListener('DOMContentLoaded', async function() {
+        const today = new Date();
+        const sixMonthsLater = new Date(today);
+        sixMonthsLater.setMonth(sixMonthsLater.getMonth() + 6);
+        
+        document.getElementById('startDate').value = today.toISOString().split('T')[0];
+        document.getElementById('endDate').value = sixMonthsLater.toISOString().split('T')[0];
+
+        await Promise.all([
+            loadCategories(),
+            loadLines(),
+            loadShiftConfigs()
+        ]);
+
+        document.getElementById('lineSelect').addEventListener('change', updateShiftConfigUI);
+        document.getElementById('categorySelect').addEventListener('change', loadProductsByCategory);
+    });
+
+    async function loadCategories() {
+        const data = await fetchAPI('categories/');
+        const categories = data.results || data;
+        const select = document.getElementById('categorySelect');
+        select.innerHTML = '<option value="">Select a category...</option>' + 
+            categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    }
+
+    async function loadLines() {
+        const data = await fetchAPI('lines/');
+        allLines = data.results || data;
+        const select = document.getElementById('lineSelect');
+        select.innerHTML = allLines.map(line => 
+            `<option value="${line.id}">${line.site_name} - ${line.name}</option>`
+        ).join('');
+    }
+
+    async function loadShiftConfigs() {
+        const data = await fetchAPI('shift-configs/');
+        shiftConfigs = data.results || data;
+    }
+
+    async function loadProductsByCategory() {
+        const categoryId = document.getElementById('categorySelect').value;
+        const select = document.getElementById('productFilter');
+        
+        if (!categoryId) {
+            select.innerHTML = '<option value="">All Products in Category</option>';
+            return;
+        }
+
+        const data = await fetchAPI(`products/by_category/?category_id=${categoryId}`);
+        const products = data.results || data;
+        select.innerHTML = '<option value="">All Products in Category</option>' + 
+            products.map(p => `<option value="${p.id}">${p.code} - ${p.name}</option>`).join('');
+    }
+
+    function updateShiftConfigUI() {
+        const container = document.getElementById('shiftConfigContainer');
+        const selectedOptions = Array.from(document.getElementById('lineSelect').selectedOptions);
+        
+        if (selectedOptions.length === 0) {
+            container.innerHTML = '<small class="text-muted">Select lines first</small>';
+            return;
+        }
+
+        container.innerHTML = selectedOptions.map(opt => {
+            const line = allLines.find(l => l.id == opt.value);
+            const hasOverrides = line && line.active_overrides_count > 0;
+            return `
+                <div class="mb-2">
+                    <label class="form-label small">${line ? line.name : 'Line'} ${hasOverrides ? '<span class="badge bg-warning text-dark"><i class="bi bi-wrench"></i> Has Overrides</span>' : ''}</label>
+                    <select class="form-select form-select-sm" data-line-id="${opt.value}">
+                        <option value="override" ${hasOverrides ? 'selected' : ''}>🔧 Use Override Config (date-based)</option>
+                        ${shiftConfigs.map(sc => `<option value="${sc.id}" ${!hasOverrides && line && line.default_shift_config == sc.id ? 'selected' : ''}>${sc.name}</option>`).join('')}
+                    </select>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function runSimulation() {
+        const categoryId = document.getElementById('categorySelect').value;
+        if (!categoryId) {
+            alert('Please select a product category');
+            return;
+        }
+
+        const lineSelect = document.getElementById('lineSelect');
+        const selectedLineIds = Array.from(lineSelect.selectedOptions).map(opt => parseInt(opt.value));
+        
+        if (selectedLineIds.length === 0) {
+            alert('Please select at least one production line');
+            return;
+        }
+
+        const shiftConfigSelects = document.querySelectorAll('#shiftConfigContainer select');
+        const lineShiftConfigs = Array.from(shiftConfigSelects).map(select => ({
+            line_id: parseInt(select.dataset.lineId),
+            shift_config_id: select.value === 'override' ? null : parseInt(select.value),
+            use_override: select.value === 'override'
+        }));
+
+        const requestData = {
+            category_id: parseInt(categoryId),
+            line_ids: selectedLineIds,
+            shift_configs: lineShiftConfigs,
+            start_date: document.getElementById('startDate').value,
+            end_date: document.getElementById('endDate').value,
+            product_id: document.getElementById('productFilter').value || null
+        };
+
+        try {
+            const result = await postAPI('/api/simulate/category/', requestData);
+            displayResults(result);
+        } catch (error) {
+            console.error('Simulation error:', error);
+            alert('Error running simulation');
+        }
+    }
+
+    function displayResults(result) {
+        document.getElementById('avgUtilization').textContent = result.average_utilization + '%';
+        document.getElementById('peakUtilization').textContent = result.peak_utilization + '%';
+        document.getElementById('overCapacityPeriods').textContent = result.over_capacity_periods;
+        document.getElementById('categoryName').textContent = result.overlay_data?.category_name || '-';
+
+        updateChart(result.data_points);
+        updateTable(result.data_points);
+    }
+
+    function updateChart(dataPoints) {
+        const ctx = document.getElementById('simulationChart').getContext('2d');
+        
+        if (simulationChart) simulationChart.destroy();
+
+        // Point colors for capacity - highlight overrides
+        const capacityPointColors = dataPoints.map(dp => 
+            dp.has_override ? '#ffc107' : chartColors.primary
+        );
+        const capacityPointRadius = dataPoints.map(dp => 
+            dp.has_override ? 6 : 3
+        );
+
+        simulationChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: dataPoints.map(dp => dp.date),
+                datasets: [
+                    {
+                        label: 'Category Demand',
+                        data: dataPoints.map(dp => parseFloat(dp.demand)),
+                        borderColor: chartColors.accent,
+                        backgroundColor: chartColors.accentLight,
+                        fill: true,
+                        tension: 0.3
+                    },
+                    {
+                        label: 'Capacity',
+                        data: dataPoints.map(dp => parseFloat(dp.capacity)),
+                        borderColor: chartColors.primary,
+                        backgroundColor: chartColors.primaryLight,
+                        borderDash: [5, 5],
+                        fill: false,
+                        tension: 0,
+                        pointBackgroundColor: capacityPointColors,
+                        pointBorderColor: capacityPointColors,
+                        pointRadius: capacityPointRadius,
+                        pointHoverRadius: 8
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            afterBody: function(context) {
+                                const dataIndex = context[0].dataIndex;
+                                const dp = dataPoints[dataIndex];
+                                if (dp.has_override) {
+                                    return ['⚠️ Config override active for this week'];
+                                }
+                                return [];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Units' }
+                    }
+                }
+            }
+        });
+    }
+
+    function updateTable(dataPoints) {
+        const tbody = document.querySelector('#dataTable tbody');
+        tbody.innerHTML = dataPoints.map(dp => `
+            <tr class="${dp.over_capacity ? 'table-danger' : ''}">
+                <td>${dp.date}</td>
+                <td>${parseFloat(dp.demand).toLocaleString()}</td>
+                <td>${parseFloat(dp.capacity).toLocaleString()}</td>
+                <td>${dp.utilization_percent}%</td>
+                <td>${dp.over_capacity ? '<span class="badge bg-danger">Over</span>' : '<span class="badge bg-success">OK</span>'}</td>
+                <td>
+                    ${dp.has_override 
+                        ? '<span class="badge bg-warning text-dark" title="Custom configuration active"><i class="bi bi-wrench"></i></span>' 
+                        : '<span class="text-muted">-</span>'}
+                </td>
+            </tr>
+        `).join('');
+    }
+</script>
+{% endblock %}
