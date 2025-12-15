@@ -37,6 +37,7 @@ class ShiftConfigurationSerializer(serializers.ModelSerializer):
 
 class ProductionLineSerializer(serializers.ModelSerializer):
     site_name = serializers.ReadOnlyField()
+    site_code = serializers.CharField(source='site.code', read_only=True)
     default_shift_config_name = serializers.CharField(
         source='default_shift_config.name', read_only=True
     )
@@ -45,7 +46,7 @@ class ProductionLineSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = ProductionLine
-        fields = ['id', 'name', 'code', 'site', 'site_name', 'default_shift_config',
+        fields = ['id', 'name', 'code', 'site', 'site_name', 'site_code', 'default_shift_config',
                   'default_shift_config_name', 'base_capacity_per_hour', 
                   'efficiency_factor', 'is_active', 'default_weekly_hours',
                   'active_overrides_count']

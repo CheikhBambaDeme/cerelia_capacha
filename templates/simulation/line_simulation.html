@@ -461,6 +461,16 @@
         // Update table
         updateTable(result.data_points, result.client_overlays || {});
     }
+    
+    function getSelectedLineNames() {
+        const lineSelect = document.getElementById('lineSelect');
+        const selectedIds = Array.from(lineSelect.selectedOptions).map(opt => parseInt(opt.value));
+        // Return site_code + line_code format
+        return selectedIds.map(id => {
+            const line = allLines.find(l => l.id === id);
+            return line ? `${line.site_code}-${line.code}` : '';
+        }).filter(s => s);
+    }
 
     function updateChart(dataPoints, clientOverlays) {
         const ctx = document.getElementById('simulationChart').getContext('2d');
@@ -468,6 +478,12 @@
         if (simulationChart) {
             simulationChart.destroy();
         }
+        
+        // Get selected line names for chart subtitle
+        const selectedLineNames = getSelectedLineNames();
+        const linesSubtitle = selectedLineNames.length > 0 
+            ? selectedLineNames.join(' + ') 
+            : 'No lines selected';
 
         // Use date_display if available (daily view), otherwise use date (weekly view)
         const labels = dataPoints.map(dp => dp.date_display || dp.date);
@@ -575,6 +591,18 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
+                    title: {
+                        display: true,
+                        text: `Lines: ${linesSubtitle}`,
+                        font: {
+                            size: 14,
+                            weight: 'normal'
+                        },
+                        color: '#6c757d',
+                        padding: {
+                            bottom: 10
+                        }
+                    },
                     legend: {
                         position: 'top',
                     },
