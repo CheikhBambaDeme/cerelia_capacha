@@ -140,6 +140,11 @@ class LineSimulationRequestSerializer(serializers.Serializer):
         required=False,
         default=list
     )
+    granularity = serializers.ChoiceField(
+        choices=['week', 'day'],
+        required=False,
+        default='week'
+    )
 
 
 class CategorySimulationRequestSerializer(serializers.Serializer):

@@ -28,6 +28,131 @@ def get_weeks_in_range(start_date, end_date):
     return weeks
 
 
+def get_days_in_range(start_date, end_date):
+    """Generate list of dates in the given range"""
+    days = []
+    current = start_date
+    while current <= end_date:
+        days.append(current)
+        current += timedelta(days=1)
+    return days
+
+
+def calculate_daily_capacity(line_ids: list, shift_configs: dict, for_date) -> Decimal:
+    """
+    Calculate total daily capacity for given lines with their shift configurations
+    
+    Args:
+        line_ids: List of production line IDs
+        shift_configs: Dict mapping line_id -> shift_config_id (manual override from UI)
+        for_date: Date to calculate capacity for
+    
+    Returns:
+        Total daily capacity in units
+    """
+    total_capacity = Decimal('0')
+    day_of_week = for_date.weekday()  # 0=Monday, 5=Saturday, 6=Sunday
+    
+    lines = ProductionLine.objects.filter(id__in=line_ids, is_active=True)
+    
+    for line in lines:
+        shift_config_id = shift_configs.get(line.id)
+        
+        # Get the configuration to use
+        if shift_config_id:
+            try:
+                config = ShiftConfiguration.objects.get(id=shift_config_id)
+                shifts_per_day = config.shifts_per_day
+                hours_per_shift = config.hours_per_shift
+                includes_saturday = config.includes_saturday
+                includes_sunday = config.includes_sunday
+            except ShiftConfiguration.DoesNotExist:
+                config_data = line.get_config_for_date(for_date)
+                if config_data:
+                    shifts_per_day = config_data['shifts_per_day']
+                    hours_per_shift = config_data['hours_per_shift']
+                    includes_saturday = config_data['include_saturday']
+                    includes_sunday = config_data['include_sunday']
+                else:
+                    continue
+        else:
+            config_data = line.get_config_for_date(for_date)
+            if config_data:
+                shifts_per_day = config_data['shifts_per_day']
+                hours_per_shift = config_data['hours_per_shift']
+                includes_saturday = config_data['include_saturday']
+                includes_sunday = config_data['include_sunday']
+            else:
+                continue
+        
+        # Check if this day is a working day
+        is_working_day = True
+        if day_of_week == 5 and not includes_saturday:  # Saturday
+            is_working_day = False
+        elif day_of_week == 6 and not includes_sunday:  # Sunday
+            is_working_day = False
+        
+        if is_working_day:
+            daily_hours = shifts_per_day * hours_per_shift
+            daily_capacity = Decimal(str(line.base_capacity_per_hour)) * Decimal(str(daily_hours)) * Decimal(str(line.efficiency_factor))
+            total_capacity += daily_capacity
+    
+    return total_capacity
+
+
+def calculate_capacity_per_day(line_ids: list, shift_configs: dict, days: list) -> dict:
+    """
+    Calculate capacity for each day, considering LineConfigOverrides
+    """
+    capacity_by_day = {}
+    
+    for day in days:
+        capacity = calculate_daily_capacity(line_ids, shift_configs, for_date=day)
+        capacity_by_day[day] = capacity
+    
+    return capacity_by_day
+
+
+def get_demand_for_lines_daily(line_ids: list, start_date, end_date,
+                               client_id: Optional[int] = None,
+                               category_id: Optional[int] = None,
+                               product_id: Optional[int] = None) -> dict:
+    """
+    Get demand forecast for products on specified lines, distributed daily
+    Distributes weekly demand evenly across working days (Mon-Fri by default)
+    
+    Returns:
+        Dict mapping date -> daily_demand
+    """
+    # Get weekly demand first
+    weekly_demand = get_demand_for_lines(line_ids, start_date, end_date, client_id, category_id, product_id)
+    
+    # Distribute weekly demand to daily (divide by 5 working days)
+    daily_demand = {}
+    for week_start, total_weekly in weekly_demand.items():
+        # Distribute to Mon-Fri of that week
+        for day_offset in range(5):  # Monday to Friday
+            day = week_start + timedelta(days=day_offset)
+            if start_date <= day <= end_date:
+                daily_demand[day] = total_weekly / Decimal('5')
+    
+    return daily_demand
+
+
+def get_client_demand_daily(client_id: int, line_ids: list, start_date, end_date) -> dict:
+    """Get daily demand for a specific client on specified lines"""
+    weekly_demand = get_client_demand(client_id, line_ids, start_date, end_date)
+    
+    daily_demand = {}
+    for week_start, total_weekly in weekly_demand.items():
+        for day_offset in range(5):  # Monday to Friday
+            day = week_start + timedelta(days=day_offset)
+            if start_date <= day <= end_date:
+                daily_demand[day] = total_weekly / Decimal('5')
+    
+    return daily_demand
+
+
 def calculate_weekly_capacity(line_ids: list, shift_configs: dict, for_date=None) -> Decimal:
     """
     Calculate total weekly capacity for given lines with their shift configurations
@@ -232,12 +357,14 @@ def run_line_simulation(line_ids: list, shift_configs: list,
                         client_id: Optional[int] = None,
                         category_id: Optional[int] = None,
                         product_id: Optional[int] = None,
-                        overlay_client_codes: list = None) -> dict:
+                        overlay_client_codes: list = None,
+                        granularity: str = 'week') -> dict:
     """
     Run line simulation (Dashboard 1)
     Analyze demand vs capacity for selected lines
     Considers LineConfigOverrides for date-specific capacity
     Supports client demand overlays by code
+    Supports both weekly and daily granularity
     """
     if overlay_client_codes is None:
         overlay_client_codes = []
@@ -251,6 +378,43 @@ def run_line_simulation(line_ids: list, shift_configs: list,
         else:
             config_dict[sc['line_id']] = sc.get('shift_config_id')
     
+    # Get overlay data if filters are applied
+    overlay_data = {}
+    
+    if client_id:
+        client = Client.objects.filter(id=client_id).first()
+        if client:
+            overlay_data['client_name'] = client.name
+    
+    if product_id:
+        product = Product.objects.filter(id=product_id).first()
+        if product:
+            overlay_data['product_name'] = f"{product.code} - {product.name}"
+    
+    if category_id:
+        category = ProductCategory.objects.filter(id=category_id).first()
+        if category:
+            overlay_data['category_name'] = category.name
+    
+    # Process based on granularity
+    if granularity == 'day':
+        return _run_line_simulation_daily(
+            line_ids, config_dict, start_date, end_date,
+            client_id, category_id, product_id,
+            overlay_client_codes, overlay_data
+        )
+    else:
+        return _run_line_simulation_weekly(
+            line_ids, config_dict, start_date, end_date,
+            client_id, category_id, product_id,
+            overlay_client_codes, overlay_data
+        )
+
+
+def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
+                                 client_id, category_id, product_id,
+                                 overlay_client_codes, overlay_data):
+    """Weekly granularity simulation"""
     # Get weeks in range
     weeks = get_weeks_in_range(start_date, end_date)
     
@@ -263,25 +427,10 @@ def run_line_simulation(line_ids: list, shift_configs: list,
         client_id, category_id, product_id
     )
     
-    # Get overlay data if filters are applied
-    overlay_data = {}
+    # Get overlay demand if client filter is applied
     overlay_demand = {}
-    
     if client_id:
-        client = Client.objects.filter(id=client_id).first()
-        if client:
-            overlay_data['client_name'] = client.name
-            overlay_demand = get_client_demand(client_id, line_ids, start_date, end_date)
-    
-    if product_id:
-        product = Product.objects.filter(id=product_id).first()
-        if product:
-            overlay_data['product_name'] = f"{product.code} - {product.name}"
-    
-    if category_id:
-        category = ProductCategory.objects.filter(id=category_id).first()
-        if category:
-            overlay_data['category_name'] = category.name
+        overlay_demand = get_client_demand(client_id, line_ids, start_date, end_date)
     
     # Get client overlay data by code
     client_overlays = {}
@@ -354,6 +503,121 @@ def run_line_simulation(line_ids: list, shift_configs: list,
     peak_utilization = max(utilizations) if utilizations else 0
     
     result = {
+        'granularity': 'week',
+        'average_utilization': round(avg_utilization, 1),
+        'peak_utilization': round(peak_utilization, 1),
+        'over_capacity_periods': over_capacity_count,
+        'total_capacity': total_capacity,
+        'total_demand': total_demand,
+        'data_points': data_points,
+        'overlay_data': overlay_data if overlay_data else None
+    }
+    
+    # Add client overlays if any
+    if client_overlays:
+        result['client_overlays'] = client_overlays
+    
+    return result
+
+
+def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
+                                client_id, category_id, product_id,
+                                overlay_client_codes, overlay_data):
+    """Daily granularity simulation"""
+    # Get days in range
+    days = get_days_in_range(start_date, end_date)
+    
+    # Calculate capacity per day (considers overrides)
+    capacity_by_day = calculate_capacity_per_day(line_ids, config_dict, days)
+    
+    # Get demand data (distributed daily)
+    demand_data = get_demand_for_lines_daily(
+        line_ids, start_date, end_date,
+        client_id, category_id, product_id
+    )
+    
+    # Get overlay demand if client filter is applied
+    overlay_demand = {}
+    if client_id:
+        overlay_demand = get_client_demand_daily(client_id, line_ids, start_date, end_date)
+    
+    # Get client overlay data by code
+    client_overlays = {}
+    for client_code in overlay_client_codes:
+        client = Client.objects.filter(code__iexact=client_code).first()
+        if client:
+            client_demand = get_client_demand_daily(client.id, line_ids, start_date, end_date)
+            # Build data points for this client
+            client_data_points = []
+            for day in days:
+                demand = client_demand.get(day, Decimal('0'))
+                client_data_points.append({
+                    'date': day.strftime('%Y-%m-%d'),
+                    'day': day,
+                    'demand': demand
+                })
+            client_overlays[client.code] = {
+                'client_name': client.name,
+                'client_id': client.id,
+                'data_points': client_data_points,
+                'total_demand': sum(dp['demand'] for dp in client_data_points)
+            }
+    
+    # Build data points
+    data_points = []
+    total_demand = Decimal('0')
+    total_capacity = Decimal('0')
+    utilizations = []
+    over_capacity_count = 0
+    
+    for day in days:
+        demand = demand_data.get(day, Decimal('0'))
+        daily_capacity = capacity_by_day.get(day, Decimal('0'))
+        
+        total_demand += demand
+        total_capacity += daily_capacity
+        
+        if daily_capacity > 0:
+            utilization = (demand / daily_capacity) * 100
+        else:
+            utilization = Decimal('0') if demand == 0 else Decimal('999')  # No capacity but has demand
+        
+        utilizations.append(float(utilization))
+        over_capacity = utilization > 100
+        if over_capacity:
+            over_capacity_count += 1
+        
+        # Get config details for this day to show override info
+        config_details = get_line_config_details(line_ids, day)
+        has_override = any(c['config_type'] == 'override' for c in config_details)
+        
+        # Get day name for display
+        day_name = day.strftime('%a')  # Mon, Tue, etc.
+        
+        data_point = {
+            'date': day.strftime('%Y-%m-%d'),
+            'date_display': f"{day_name} {day.strftime('%d/%m')}",
+            'day': day,
+            'demand': demand,
+            'capacity': daily_capacity,
+            'utilization_percent': round(utilization, 1) if utilization < 999 else 'N/A',
+            'over_capacity': over_capacity,
+            'has_override': has_override,
+            'is_weekend': day.weekday() >= 5
+        }
+        
+        if overlay_demand:
+            data_point['overlay_demand'] = overlay_demand.get(day, Decimal('0'))
+        
+        data_points.append(data_point)
+    
+    # Calculate summary stats (exclude days with no capacity for avg)
+    valid_utilizations = [u for u in utilizations if u < 999]
+    avg_utilization = sum(valid_utilizations) / len(valid_utilizations) if valid_utilizations else 0
+    peak_utilization = max(valid_utilizations) if valid_utilizations else 0
+    
+    result = {
+        'granularity': 'day',
         'average_utilization': round(avg_utilization, 1),
         'peak_utilization': round(peak_utilization, 1),
         'over_capacity_periods': over_capacity_count,

@@ -31,6 +31,21 @@
                     </div>
                 </div>
 
+                <!-- Time Granularity -->
+                <div class="mb-3">
+                    <label class="form-label">Time Granularity</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="granularity" id="granularityWeek" value="week" checked>
+                        <label class="btn btn-outline-primary" for="granularityWeek">
+                            <i class="bi bi-calendar-week"></i> Weekly
+                        </label>
+                        <input type="radio" class="btn-check" name="granularity" id="granularityDay" value="day">
+                        <label class="btn btn-outline-primary" for="granularityDay">
+                            <i class="bi bi-calendar-day"></i> Daily
+                        </label>
+                    </div>
+                </div>
+
                 <!-- Line Selection -->
                 <div class="mb-3">
                     <label class="form-label">Production Lines</label>
@@ -114,7 +129,7 @@
             <div class="col-md-3">
                 <div class="card stat-card danger">
                     <div class="stat-value" id="overCapacityPeriods">-</div>
-                    <div class="stat-label">Over-Capacity Weeks</div>
+                    <div class="stat-label" id="overCapacityLabel">Over-Capacity Weeks</div>
                 </div>
             </div>
             <div class="col-md-3">
@@ -322,6 +337,9 @@
         // Get client ID from code
         const clientCode = document.getElementById('clientFilter').value.trim();
         const clientId = getClientIdByCode(clientCode);
+        
+        // Get granularity
+        const granularity = document.querySelector('input[name="granularity"]:checked').value;
 
         const requestData = {
             line_ids: selectedLineIds,
@@ -331,7 +349,8 @@
             client_id: clientId,
             category_id: document.getElementById('categoryFilter').value || null,
             product_id: document.getElementById('productFilter').value || null,
-            overlay_client_codes: overlayClients.map(c => c.code)
+            overlay_client_codes: overlayClients.map(c => c.code),
+            granularity: granularity
         };
 
         try {
@@ -417,10 +436,15 @@
         // Show export buttons
         document.getElementById('exportButtons').style.display = 'inline-flex';
         
+        // Get granularity for dynamic labels
+        const granularity = document.querySelector('input[name="granularity"]:checked')?.value || 'week';
+        const periodType = granularity === 'day' ? 'Days' : 'Weeks';
+        
         // Update stats
         document.getElementById('avgUtilization').textContent = result.average_utilization + '%';
         document.getElementById('peakUtilization').textContent = result.peak_utilization + '%';
         document.getElementById('overCapacityPeriods').textContent = result.over_capacity_periods;
+        document.getElementById('overCapacityLabel').textContent = `Over-Capacity ${periodType}`;
         document.getElementById('totalCapacity').textContent = formatNumber(result.total_capacity);
 
         // Update chart with overlay data
@@ -437,14 +461,17 @@
             simulationChart.destroy();
         }
 
-        const labels = dataPoints.map(dp => dp.date);
+        // Use date_display if available (daily view), otherwise use date (weekly view)
+        const labels = dataPoints.map(dp => dp.date_display || dp.date);
         const demandData = dataPoints.map(dp => parseFloat(dp.demand));
         const capacityData = dataPoints.map(dp => parseFloat(dp.capacity));
         
-        // Point colors for capacity - highlight overrides
-        const capacityPointColors = dataPoints.map(dp => 
-            dp.has_override ? '#ffc107' : chartColors.primary
-        );
+        // Point colors for capacity - highlight overrides and weekends
+        const capacityPointColors = dataPoints.map(dp => {
+            if (dp.has_override) return '#ffc107';
+            if (dp.is_weekend) return '#6c757d';  // Gray for weekends
+            return chartColors.primary;
+        });
         const capacityPointRadius = dataPoints.map(dp => 
             dp.has_override ? 6 : 3
         );
@@ -550,8 +577,10 @@
         ).join('');
         
         const thead = document.querySelector('#dataTable thead tr');
+        const granularity = document.querySelector('input[name="granularity"]:checked')?.value || 'week';
+        const periodLabel = granularity === 'day' ? 'Date' : 'Week';
         thead.innerHTML = `
-            <th>Week</th>
+            <th>${periodLabel}</th>
             <th>Total Demand</th>
             ${overlayHeaders}
             <th>Capacity</th>
@@ -567,11 +596,21 @@
                 return `<td>${formatNumber(value)}</td>`;
             }).join('');
             
+            // Determine row class - weekends get muted style
+            let rowClass = '';
+            if (dp.over_capacity) rowClass = 'table-danger';
+            else if (dp.has_override) rowClass = 'table-warning';
+            else if (dp.is_weekend) rowClass = 'table-secondary';
+            
+            // Use date_display if available for daily view
+            const displayDate = dp.date_display || dp.date;
+            
             return `
-                <tr class="${dp.over_capacity ? 'table-danger' : ''} ${dp.has_override ? 'table-warning' : ''}">
+                <tr class="${rowClass}">
                     <td>
-                        ${dp.date}
+                        ${displayDate}
                         ${dp.has_override ? '<i class="bi bi-gear text-warning ms-1" title="Config override active"></i>' : ''}
+                        ${dp.is_weekend ? '<i class="bi bi-calendar-x text-muted ms-1" title="Weekend"></i>' : ''}
                     </td>
                     <td>${formatNumber(dp.demand)}</td>
                     ${overlayValues}
@@ -600,9 +639,12 @@
         
         const dataPoints = lastSimulationResult.data_points;
         const overlays = lastClientOverlays;
+        const granularity = document.querySelector('input[name="granularity"]:checked')?.value || 'week';
+        const periodLabel = granularity === 'day' ? 'Date' : 'Week';
+        const periodType = granularity === 'day' ? 'Days' : 'Weeks';
         
         // Build CSV headers
-        let headers = ['Week', 'Total Demand'];
+        let headers = [periodLabel, 'Total Demand'];
         Object.keys(overlays).forEach(code => {
             headers.push(code);
         });
@@ -638,7 +680,7 @@
         csvContent += `Summary\n`;
         csvContent += `Average Utilization,${lastSimulationResult.average_utilization}%\n`;
         csvContent += `Peak Utilization,${lastSimulationResult.peak_utilization}%\n`;
-        csvContent += `Over-Capacity Weeks,${lastSimulationResult.over_capacity_periods}\n`;
+        csvContent += `Over-Capacity ${periodType},${lastSimulationResult.over_capacity_periods}\n`;
         csvContent += `Total Capacity,${lastSimulationResult.total_capacity}\n`;
         csvContent += `Total Demand,${lastSimulationResult.total_demand}\n`;
         
@@ -654,6 +696,9 @@
         
         const dataPoints = lastSimulationResult.data_points;
         const overlays = lastClientOverlays;
+        const granularity = document.querySelector('input[name="granularity"]:checked')?.value || 'week';
+        const periodLabel = granularity === 'day' ? 'Date' : 'Week';
+        const periodType = granularity === 'day' ? 'Days' : 'Weeks';
         
         // Build HTML table for Excel
         let html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">';
@@ -662,7 +707,7 @@
         
         // Headers
         html += '<tr style="background-color: #4a90d9; color: white; font-weight: bold;">';
-        html += '<th>Week</th><th>Total Demand</th>';
+        html += `<th>${periodLabel}</th><th>Total Demand</th>`;
         Object.keys(overlays).forEach(code => {
             html += `<th>${code}</th>`;
         });
@@ -693,7 +738,7 @@
         html += '<tr style="background-color: #e9ecef; font-weight: bold;"><td colspan="8">Summary</td></tr>';
         html += `<tr><td>Average Utilization</td><td colspan="7">${lastSimulationResult.average_utilization}%</td></tr>`;
         html += `<tr><td>Peak Utilization</td><td colspan="7">${lastSimulationResult.peak_utilization}%</td></tr>`;
-        html += `<tr><td>Over-Capacity Weeks</td><td colspan="7">${lastSimulationResult.over_capacity_periods}</td></tr>`;
+        html += `<tr><td>Over-Capacity ${periodType}</td><td colspan="7">${lastSimulationResult.over_capacity_periods}</td></tr>`;
         html += `<tr><td>Total Capacity</td><td colspan="7">${lastSimulationResult.total_capacity}</td></tr>`;
         html += `<tr><td>Total Demand</td><td colspan="7">${lastSimulationResult.total_demand}</td></tr>`;
         

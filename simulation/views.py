@@ -225,7 +225,8 @@ def simulate_line(request):
         client_id=data.get('client_id'),
         category_id=data.get('category_id'),
         product_id=data.get('product_id'),
-        overlay_client_codes=data.get('overlay_client_codes', [])
+        overlay_client_codes=data.get('overlay_client_codes', []),
+        granularity=data.get('granularity', 'week')
     )
     
     return Response(result)
