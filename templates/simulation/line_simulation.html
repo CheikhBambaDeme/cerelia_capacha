@@ -106,6 +106,14 @@
                 <div id="overlayClientsList" class="mb-3">
                     <!-- Client overlay tags will appear here -->
                 </div>
+                
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="combineOverlays">
+                    <label class="form-check-label" for="combineOverlays">
+                        <i class="bi bi-union"></i> Combine selected clients
+                    </label>
+                    <small class="text-muted d-block">Show sum of all overlay clients as one curve</small>
+                </div>
             </div>
         </div>
     </div>
@@ -503,29 +511,59 @@
             }
         ];
         
-        // Add overlay datasets for each client
-        Object.entries(clientOverlays).forEach(([clientCode, overlayData], index) => {
-            const overlayClient = overlayClients.find(c => c.code === clientCode);
-            const color = overlayClient ? overlayClient.color : overlayColors[index % overlayColors.length];
-            
-            // Map overlay demand data to match dataPoints labels
-            const overlayDemandData = dataPoints.map(dp => {
-                const overlayPoint = overlayData.data_points.find(op => op.date === dp.date);
-                return overlayPoint ? parseFloat(overlayPoint.demand) : 0;
+        // Check if we should combine overlays
+        const combineOverlays = document.getElementById('combineOverlays').checked;
+        
+        if (combineOverlays && Object.keys(clientOverlays).length > 0) {
+            // Create combined overlay - sum all client demands
+            const combinedDemandData = dataPoints.map(dp => {
+                let sum = 0;
+                Object.entries(clientOverlays).forEach(([clientCode, overlayData]) => {
+                    const overlayPoint = overlayData.data_points.find(op => op.date === dp.date);
+                    sum += overlayPoint ? parseFloat(overlayPoint.demand) : 0;
+                });
+                return sum;
             });
+            
+            // Build label with all client codes
+            const clientCodes = Object.keys(clientOverlays).join(' + ');
             
             datasets.push({
-                label: `${clientCode} (${overlayData.client_name})`,
-                data: overlayDemandData,
-                borderColor: color,
-                backgroundColor: color + '40',  // Add transparency
+                label: `Combined (${clientCodes})`,
+                data: combinedDemandData,
+                borderColor: '#9b59b6',  // Purple for combined
+                backgroundColor: '#9b59b640',
                 fill: false,
                 tension: 0.3,
-                borderWidth: 2,
-                pointRadius: 4,
-                order: 3 + index
+                borderWidth: 3,
+                pointRadius: 5,
+                order: 3
             });
-        });
+        } else {
+            // Add overlay datasets for each client separately
+            Object.entries(clientOverlays).forEach(([clientCode, overlayData], index) => {
+                const overlayClient = overlayClients.find(c => c.code === clientCode);
+                const color = overlayClient ? overlayClient.color : overlayColors[index % overlayColors.length];
+                
+                // Map overlay demand data to match dataPoints labels
+                const overlayDemandData = dataPoints.map(dp => {
+                    const overlayPoint = overlayData.data_points.find(op => op.date === dp.date);
+                    return overlayPoint ? parseFloat(overlayPoint.demand) : 0;
+                });
+                
+                datasets.push({
+                    label: `${clientCode} (${overlayData.client_name})`,
+                    data: overlayDemandData,
+                    borderColor: color,
+                    backgroundColor: color + '40',  // Add transparency
+                    fill: false,
+                    tension: 0.3,
+                    borderWidth: 2,
+                    pointRadius: 4,
+                    order: 3 + index
+                });
+            });
+        }
 
         simulationChart = new Chart(ctx, {
             type: 'line',
@@ -570,11 +608,18 @@
 
     function updateTable(dataPoints, clientOverlays) {
         const tbody = document.querySelector('#dataTable tbody');
+        const combineOverlays = document.getElementById('combineOverlays').checked;
         
         // Build dynamic header for overlay columns
-        const overlayHeaders = Object.entries(clientOverlays).map(([code, data]) => 
-            `<th>${code}</th>`
-        ).join('');
+        let overlayHeaders = '';
+        if (combineOverlays && Object.keys(clientOverlays).length > 0) {
+            const clientCodes = Object.keys(clientOverlays).join(' + ');
+            overlayHeaders = `<th>Combined (${clientCodes})</th>`;
+        } else {
+            overlayHeaders = Object.entries(clientOverlays).map(([code, data]) => 
+                `<th>${code}</th>`
+            ).join('');
+        }
         
         const thead = document.querySelector('#dataTable thead tr');
         const granularity = document.querySelector('input[name="granularity"]:checked')?.value || 'week';
@@ -590,11 +635,22 @@
         
         tbody.innerHTML = dataPoints.map(dp => {
             // Get overlay values for this data point
-            const overlayValues = Object.entries(clientOverlays).map(([code, data]) => {
-                const overlayPoint = data.data_points.find(op => op.date === dp.date);
-                const value = overlayPoint ? overlayPoint.demand : 0;
-                return `<td>${formatNumber(value)}</td>`;
-            }).join('');
+            let overlayValues = '';
+            if (combineOverlays && Object.keys(clientOverlays).length > 0) {
+                // Sum all overlay values
+                let sum = 0;
+                Object.entries(clientOverlays).forEach(([code, data]) => {
+                    const overlayPoint = data.data_points.find(op => op.date === dp.date);
+                    sum += overlayPoint ? parseFloat(overlayPoint.demand) : 0;
+                });
+                overlayValues = `<td>${formatNumber(sum)}</td>`;
+            } else {
+                overlayValues = Object.entries(clientOverlays).map(([code, data]) => {
+                    const overlayPoint = data.data_points.find(op => op.date === dp.date);
+                    const value = overlayPoint ? overlayPoint.demand : 0;
+                    return `<td>${formatNumber(value)}</td>`;
+                }).join('');
+            }
             
             // Determine row class - weekends get muted style
             let rowClass = '';
@@ -642,12 +698,18 @@
         const granularity = document.querySelector('input[name="granularity"]:checked')?.value || 'week';
         const periodLabel = granularity === 'day' ? 'Date' : 'Week';
         const periodType = granularity === 'day' ? 'Days' : 'Weeks';
+        const combineOverlays = document.getElementById('combineOverlays').checked;
         
         // Build CSV headers
         let headers = [periodLabel, 'Total Demand'];
-        Object.keys(overlays).forEach(code => {
-            headers.push(code);
-        });
+        if (combineOverlays && Object.keys(overlays).length > 0) {
+            const clientCodes = Object.keys(overlays).join(' + ');
+            headers.push(`Combined (${clientCodes})`);
+        } else {
+            Object.keys(overlays).forEach(code => {
+                headers.push(code);
+            });
+        }
         headers.push('Capacity', 'Utilization %', 'Status', 'Has Override');
         
         // Build CSV rows
@@ -660,10 +722,19 @@
             ];
             
             // Add overlay values
-            Object.entries(overlays).forEach(([code, data]) => {
-                const overlayPoint = data.data_points.find(op => op.date === dp.date);
-                row.push(overlayPoint ? overlayPoint.demand : 0);
-            });
+            if (combineOverlays && Object.keys(overlays).length > 0) {
+                let sum = 0;
+                Object.entries(overlays).forEach(([code, data]) => {
+                    const overlayPoint = data.data_points.find(op => op.date === dp.date);
+                    sum += overlayPoint ? parseFloat(overlayPoint.demand) : 0;
+                });
+                row.push(sum);
+            } else {
+                Object.entries(overlays).forEach(([code, data]) => {
+                    const overlayPoint = data.data_points.find(op => op.date === dp.date);
+                    row.push(overlayPoint ? overlayPoint.demand : 0);
+                });
+            }
             
             row.push(
                 dp.capacity,
@@ -699,6 +770,7 @@
         const granularity = document.querySelector('input[name="granularity"]:checked')?.value || 'week';
         const periodLabel = granularity === 'day' ? 'Date' : 'Week';
         const periodType = granularity === 'day' ? 'Days' : 'Weeks';
+        const combineOverlays = document.getElementById('combineOverlays').checked;
         
         // Build HTML table for Excel
         let html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">';
@@ -708,9 +780,14 @@
         // Headers
         html += '<tr style="background-color: #4a90d9; color: white; font-weight: bold;">';
         html += `<th>${periodLabel}</th><th>Total Demand</th>`;
-        Object.keys(overlays).forEach(code => {
-            html += `<th>${code}</th>`;
-        });
+        if (combineOverlays && Object.keys(overlays).length > 0) {
+            const clientCodes = Object.keys(overlays).join(' + ');
+            html += `<th>Combined (${clientCodes})</th>`;
+        } else {
+            Object.keys(overlays).forEach(code => {
+                html += `<th>${code}</th>`;
+            });
+        }
         html += '<th>Capacity</th><th>Utilization %</th><th>Status</th><th>Has Override</th>';
         html += '</tr>';
         
@@ -721,10 +798,19 @@
             html += `<td>${dp.date}</td>`;
             html += `<td>${dp.demand}</td>`;
             
-            Object.entries(overlays).forEach(([code, data]) => {
-                const overlayPoint = data.data_points.find(op => op.date === dp.date);
-                html += `<td>${overlayPoint ? overlayPoint.demand : 0}</td>`;
-            });
+            if (combineOverlays && Object.keys(overlays).length > 0) {
+                let sum = 0;
+                Object.entries(overlays).forEach(([code, data]) => {
+                    const overlayPoint = data.data_points.find(op => op.date === dp.date);
+                    sum += overlayPoint ? parseFloat(overlayPoint.demand) : 0;
+                });
+                html += `<td>${sum}</td>`;
+            } else {
+                Object.entries(overlays).forEach(([code, data]) => {
+                    const overlayPoint = data.data_points.find(op => op.date === dp.date);
+                    html += `<td>${overlayPoint ? overlayPoint.demand : 0}</td>`;
+                });
+            }
             
             html += `<td>${dp.capacity}</td>`;
             html += `<td>${dp.utilization_percent}%</td>`;
