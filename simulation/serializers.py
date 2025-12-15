@@ -133,9 +133,13 @@ class LineSimulationRequestSerializer(serializers.Serializer):
     shift_configs = LineShiftConfigSerializer(many=True)
     start_date = serializers.DateField()
     end_date = serializers.DateField()
-    client_id = serializers.IntegerField(required=False, allow_null=True)
+    client_codes = serializers.ListField(
+        child=serializers.CharField(max_length=20),
+        required=False,
+        allow_null=True
+    )
+    product_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     category_id = serializers.IntegerField(required=False, allow_null=True)
-    product_id = serializers.IntegerField(required=False, allow_null=True)
     overlay_client_codes = serializers.ListField(
         child=serializers.CharField(max_length=20),
         required=False,

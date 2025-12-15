@@ -354,9 +354,9 @@ def get_client_demand(client_id: int, line_ids: list, week_start, week_end) -> d
 
 def run_line_simulation(line_ids: list, shift_configs: list,
                         start_date, end_date,
-                        client_id: Optional[int] = None,
+                        client_codes: list = None,
                         category_id: Optional[int] = None,
-                        product_id: Optional[int] = None,
+                        product_code: str = None,
                         overlay_client_codes: list = None,
                         granularity: str = 'week') -> dict:
     """
@@ -368,6 +368,32 @@ def run_line_simulation(line_ids: list, shift_configs: list,
     """
     if overlay_client_codes is None:
         overlay_client_codes = []
+
+    # Resolve product_id from product_code if provided
+    product_id = None
+    if product_code:
+        product = Product.objects.filter(code__iexact=product_code).first()
+        if product:
+            product_id = product.id
+
+    # Resolve client_ids from client_codes if provided
+    client_ids = []
+    if client_codes:
+        for code in client_codes:
+            client = Client.objects.filter(code__iexact=code).first()
+            if client:
+                client_ids.append(client.id)
+
+    # If multiple client_ids, combine their demand
+    client_id = None
+    combine_clients = False
+    if client_ids:
+        if len(client_ids) == 1:
+            client_id = client_ids[0]
+        else:
+            combine_clients = True
+
+    # If combining clients, demand aggregation will be handled below
     
     # Convert shift_configs to dict
     # When use_override is True, shift_config_id will be None to use date-based overrides
@@ -380,17 +406,11 @@ def run_line_simulation(line_ids: list, shift_configs: list,
     
     # Get overlay data if filters are applied
     overlay_data = {}
-    
-    if client_id:
-        client = Client.objects.filter(id=client_id).first()
-        if client:
-            overlay_data['client_name'] = client.name
-    
-    if product_id:
-        product = Product.objects.filter(id=product_id).first()
-        if product:
-            overlay_data['product_name'] = f"{product.code} - {product.name}"
-    
+
+    if client_ids:
+        overlay_data['client_codes'] = client_codes
+    if product_code:
+        overlay_data['product_code'] = product_code
     if category_id:
         category = ProductCategory.objects.filter(id=category_id).first()
         if category:
@@ -401,19 +421,22 @@ def run_line_simulation(line_ids: list, shift_configs: list,
         return _run_line_simulation_daily(
             line_ids, config_dict, start_date, end_date,
             client_id, category_id, product_id,
-            overlay_client_codes, overlay_data
+            overlay_client_codes, overlay_data,
+            combine_clients=combine_clients, client_ids=client_ids
         )
     else:
         return _run_line_simulation_weekly(
             line_ids, config_dict, start_date, end_date,
             client_id, category_id, product_id,
-            overlay_client_codes, overlay_data
+            overlay_client_codes, overlay_data,
+            combine_clients=combine_clients, client_ids=client_ids
         )
 
 
 def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
                                  client_id, category_id, product_id,
-                                 overlay_client_codes, overlay_data):
+                                 overlay_client_codes, overlay_data,
+                                 combine_clients=False, client_ids=None):
     """Weekly granularity simulation"""
     # Get weeks in range
     weeks = get_weeks_in_range(start_date, end_date)
@@ -422,10 +445,20 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
     capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks)
     
     # Get demand data
-    demand_data = get_demand_for_lines(
-        line_ids, start_date, end_date,
-        client_id, category_id, product_id
-    )
+    if combine_clients and client_ids:
+        # Sum demand for all client_ids
+        demand_data = {}
+        for cid in client_ids:
+            client_demand = get_demand_for_lines(
+                line_ids, start_date, end_date, cid, category_id, product_id
+            )
+            for week, val in client_demand.items():
+                demand_data[week] = demand_data.get(week, Decimal('0')) + val
+    else:
+        demand_data = get_demand_for_lines(
+            line_ids, start_date, end_date,
+            client_id, category_id, product_id
+        )
     
     # Get overlay demand if client filter is applied
     overlay_demand = {}
@@ -522,7 +555,8 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
 
 def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
                                 client_id, category_id, product_id,
-                                overlay_client_codes, overlay_data):
+                                overlay_client_codes, overlay_data,
+                                combine_clients=False, client_ids=None):
     """Daily granularity simulation"""
     # Get days in range
     days = get_days_in_range(start_date, end_date)
@@ -531,10 +565,19 @@ def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
     capacity_by_day = calculate_capacity_per_day(line_ids, config_dict, days)
     
     # Get demand data (distributed daily)
-    demand_data = get_demand_for_lines_daily(
-        line_ids, start_date, end_date,
-        client_id, category_id, product_id
-    )
+    if combine_clients and client_ids:
+        demand_data = {}
+        for cid in client_ids:
+            client_demand = get_demand_for_lines_daily(
+                line_ids, start_date, end_date, cid, category_id, product_id
+            )
+            for day, val in client_demand.items():
+                demand_data[day] = demand_data.get(day, Decimal('0')) + val
+    else:
+        demand_data = get_demand_for_lines_daily(
+            line_ids, start_date, end_date,
+            client_id, category_id, product_id
+        )
     
     # Get overlay demand if client filter is applied
     overlay_demand = {}

@@ -222,9 +222,9 @@ def simulate_line(request):
         shift_configs=data['shift_configs'],
         start_date=data['start_date'],
         end_date=data['end_date'],
-        client_id=data.get('client_id'),
+        client_codes=data.get('client_codes'),
         category_id=data.get('category_id'),
-        product_id=data.get('product_id'),
+        product_code=data.get('product_code'),
         overlay_client_codes=data.get('overlay_client_codes', []),
         granularity=data.get('granularity', 'week')
     )
