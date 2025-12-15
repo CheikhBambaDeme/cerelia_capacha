@@ -102,7 +102,7 @@ class ProductionLineViewSet(viewsets.ModelViewSet):
 class ClientViewSet(viewsets.ModelViewSet):
     queryset = Client.objects.filter(is_active=True)
     serializer_class = ClientSerializer
-    filterset_fields = ['priority', 'is_active']
+    filterset_fields = ['priority', 'is_active', 'code']
     search_fields = ['name', 'code']
 
 
@@ -224,7 +224,8 @@ def simulate_line(request):
         end_date=data['end_date'],
         client_id=data.get('client_id'),
         category_id=data.get('category_id'),
-        product_id=data.get('product_id')
+        product_id=data.get('product_id'),
+        overlay_client_codes=data.get('overlay_client_codes', [])
     )
     
     return Response(result)

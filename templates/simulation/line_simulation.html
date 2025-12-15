@@ -50,13 +50,13 @@
                 <hr>
 
                 <!-- Optional Filters -->
-                <h6><i class="bi bi-funnel"></i> Optional Overlays</h6>
+                <h6><i class="bi bi-funnel"></i> Optional Filters</h6>
                 
                 <div class="mb-3">
-                    <label class="form-label">Filter by Client</label>
-                    <select class="form-select" id="clientFilter">
-                        <option value="">All Clients</option>
-                    </select>
+                    <label class="form-label">Filter by Client (code)</label>
+                    <input type="text" class="form-control" id="clientFilter" list="clientDatalist" placeholder="Enter client code">
+                    <datalist id="clientDatalist">
+                    </datalist>
                 </div>
 
                 <div class="mb-3">
@@ -71,6 +71,25 @@
                     <select class="form-select" id="productFilter">
                         <option value="">All Products</option>
                     </select>
+                </div>
+
+                <hr>
+
+                <!-- Client Demand Overlays -->
+                <h6><i class="bi bi-layers"></i> Client Demand Overlays</h6>
+                <small class="text-muted d-block mb-2">Add client codes to overlay their demand curves</small>
+                
+                <div class="mb-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="clientCodeInput" placeholder="Enter client code">
+                        <button class="btn btn-outline-secondary" type="button" onclick="addClientOverlay()">
+                            <i class="bi bi-plus"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="overlayClientsList" class="mb-3">
+                    <!-- Client overlay tags will appear here -->
                 </div>
             </div>
         </div>
@@ -154,6 +173,13 @@
     let simulationChart = null;
     let shiftConfigs = [];
     let allLines = [];
+    let overlayClients = [];  // Store client codes for overlay
+    
+    // Colors for overlay curves
+    const overlayColors = [
+        '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', 
+        '#FF9F40', '#7CB9E8', '#F0E68C', '#DDA0DD', '#98FB98'
+    ];
 
     // Initialize
     document.addEventListener('DOMContentLoaded', async function() {
@@ -176,6 +202,13 @@
         // Setup event listeners
         document.getElementById('lineSelect').addEventListener('change', updateShiftConfigUI);
         document.getElementById('categoryFilter').addEventListener('change', loadProductsByCategory);
+        
+        // Handle Enter key for client code input
+        document.getElementById('clientCodeInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                addClientOverlay();
+            }
+        });
     });
 
     async function loadLines() {
@@ -187,12 +220,19 @@
         ).join('');
     }
 
+    let allClients = [];  // Store clients for lookup
+    
     async function loadClients() {
         const data = await fetchAPI('clients/');
-        const clients = data.results || data;
-        const select = document.getElementById('clientFilter');
-        select.innerHTML = '<option value="">All Clients</option>' + 
-            clients.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        allClients = data.results || data;
+        const datalist = document.getElementById('clientDatalist');
+        datalist.innerHTML = allClients.map(c => `<option value="${c.code}">${c.code} - ${c.name}</option>`).join('');
+    }
+    
+    function getClientIdByCode(code) {
+        if (!code) return null;
+        const client = allClients.find(c => c.code.toUpperCase() === code.toUpperCase());
+        return client ? client.id : null;
     }
 
     async function loadCategories() {
@@ -264,14 +304,19 @@
             use_override: select.value === 'override'
         }));
 
+        // Get client ID from code
+        const clientCode = document.getElementById('clientFilter').value.trim();
+        const clientId = getClientIdByCode(clientCode);
+
         const requestData = {
             line_ids: selectedLineIds,
             shift_configs: lineShiftConfigs,
             start_date: document.getElementById('startDate').value,
             end_date: document.getElementById('endDate').value,
-            client_id: document.getElementById('clientFilter').value || null,
+            client_id: clientId,
             category_id: document.getElementById('categoryFilter').value || null,
-            product_id: document.getElementById('productFilter').value || null
+            product_id: document.getElementById('productFilter').value || null,
+            overlay_client_codes: overlayClients.map(c => c.code)
         };
 
         try {
@@ -283,6 +328,72 @@
         }
     }
 
+    // Client overlay management functions
+    async function addClientOverlay() {
+        const input = document.getElementById('clientCodeInput');
+        const code = input.value.trim().toUpperCase();
+        
+        if (!code) {
+            return;
+        }
+        
+        // Check if already added
+        if (overlayClients.some(c => c.code === code)) {
+            alert('Client code already added');
+            input.value = '';
+            return;
+        }
+        
+        // Verify client exists
+        try {
+            const data = await fetchAPI(`clients/?code=${code}`);
+            const clients = data.results || data;
+            const client = clients.find(c => c.code.toUpperCase() === code);
+            
+            if (!client) {
+                alert(`Client with code "${code}" not found`);
+                return;
+            }
+            
+            // Add to overlay list with color
+            const colorIndex = overlayClients.length % overlayColors.length;
+            overlayClients.push({
+                code: client.code,
+                name: client.name,
+                id: client.id,
+                color: overlayColors[colorIndex]
+            });
+            
+            input.value = '';
+            updateOverlayClientsList();
+            
+        } catch (error) {
+            console.error('Error verifying client:', error);
+            alert('Error verifying client code');
+        }
+    }
+    
+    function removeClientOverlay(code) {
+        overlayClients = overlayClients.filter(c => c.code !== code);
+        updateOverlayClientsList();
+    }
+    
+    function updateOverlayClientsList() {
+        const container = document.getElementById('overlayClientsList');
+        
+        if (overlayClients.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        
+        container.innerHTML = overlayClients.map(client => `
+            <span class="badge me-1 mb-1" style="background-color: ${client.color}; cursor: pointer;" 
+                  onclick="removeClientOverlay('${client.code}')" title="Click to remove">
+                ${client.code} - ${client.name} <i class="bi bi-x"></i>
+            </span>
+        `).join('');
+    }
+
     function displayResults(result) {
         // Update stats
         document.getElementById('avgUtilization').textContent = result.average_utilization + '%';
@@ -290,14 +401,14 @@
         document.getElementById('overCapacityPeriods').textContent = result.over_capacity_periods;
         document.getElementById('totalCapacity').textContent = formatNumber(result.total_capacity);
 
-        // Update chart
-        updateChart(result.data_points);
+        // Update chart with overlay data
+        updateChart(result.data_points, result.client_overlays || {});
 
         // Update table
-        updateTable(result.data_points);
+        updateTable(result.data_points, result.client_overlays || {});
     }
 
-    function updateChart(dataPoints) {
+    function updateChart(dataPoints, clientOverlays) {
         const ctx = document.getElementById('simulationChart').getContext('2d');
         
         if (simulationChart) {
@@ -315,34 +426,63 @@
         const capacityPointRadius = dataPoints.map(dp => 
             dp.has_override ? 6 : 3
         );
+        
+        // Build datasets array
+        const datasets = [
+            {
+                label: 'Total Demand',
+                data: demandData,
+                borderColor: chartColors.accent,
+                backgroundColor: chartColors.accentLight,
+                fill: true,
+                tension: 0.3,
+                order: 2
+            },
+            {
+                label: 'Capacity',
+                data: capacityData,
+                borderColor: chartColors.primary,
+                backgroundColor: chartColors.primaryLight,
+                borderDash: [5, 5],
+                fill: false,
+                tension: 0,
+                pointBackgroundColor: capacityPointColors,
+                pointBorderColor: capacityPointColors,
+                pointRadius: capacityPointRadius,
+                pointHoverRadius: 8,
+                order: 1
+            }
+        ];
+        
+        // Add overlay datasets for each client
+        Object.entries(clientOverlays).forEach(([clientCode, overlayData], index) => {
+            const overlayClient = overlayClients.find(c => c.code === clientCode);
+            const color = overlayClient ? overlayClient.color : overlayColors[index % overlayColors.length];
+            
+            // Map overlay demand data to match dataPoints labels
+            const overlayDemandData = dataPoints.map(dp => {
+                const overlayPoint = overlayData.data_points.find(op => op.date === dp.date);
+                return overlayPoint ? parseFloat(overlayPoint.demand) : 0;
+            });
+            
+            datasets.push({
+                label: `${clientCode} (${overlayData.client_name})`,
+                data: overlayDemandData,
+                borderColor: color,
+                backgroundColor: color + '40',  // Add transparency
+                fill: false,
+                tension: 0.3,
+                borderWidth: 2,
+                pointRadius: 4,
+                order: 3 + index
+            });
+        });
 
         simulationChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: labels,
-                datasets: [
-                    {
-                        label: 'Demand',
-                        data: demandData,
-                        borderColor: chartColors.accent,
-                        backgroundColor: chartColors.accentLight,
-                        fill: true,
-                        tension: 0.3
-                    },
-                    {
-                        label: 'Capacity',
-                        data: capacityData,
-                        borderColor: chartColors.primary,
-                        backgroundColor: chartColors.primaryLight,
-                        borderDash: [5, 5],
-                        fill: false,
-                        tension: 0,
-                        pointBackgroundColor: capacityPointColors,
-                        pointBorderColor: capacityPointColors,
-                        pointRadius: capacityPointRadius,
-                        pointHoverRadius: 8
-                    }
-                ]
+                datasets: datasets
             },
             options: {
                 responsive: true,
@@ -379,24 +519,50 @@
         });
     }
 
-    function updateTable(dataPoints) {
+    function updateTable(dataPoints, clientOverlays) {
         const tbody = document.querySelector('#dataTable tbody');
-        tbody.innerHTML = dataPoints.map(dp => `
-            <tr class="${dp.over_capacity ? 'table-danger' : ''} ${dp.has_override ? 'table-warning' : ''}">
-                <td>
-                    ${dp.date}
-                    ${dp.has_override ? '<i class="bi bi-gear text-warning ms-1" title="Config override active"></i>' : ''}
-                </td>
-                <td>${formatNumber(dp.demand)}</td>
-                <td>${formatNumber(dp.capacity)}</td>
-                <td>${dp.utilization_percent}%</td>
-                <td>
-                    ${dp.over_capacity 
-                        ? '<span class="badge bg-danger">Over Capacity</span>' 
-                        : '<span class="badge bg-success">OK</span>'}
-                </td>
-            </tr>
-        `).join('');
+        
+        // Build dynamic header for overlay columns
+        const overlayHeaders = Object.entries(clientOverlays).map(([code, data]) => 
+            `<th>${code}</th>`
+        ).join('');
+        
+        const thead = document.querySelector('#dataTable thead tr');
+        thead.innerHTML = `
+            <th>Week</th>
+            <th>Total Demand</th>
+            ${overlayHeaders}
+            <th>Capacity</th>
+            <th>Utilization</th>
+            <th>Status</th>
+        `;
+        
+        tbody.innerHTML = dataPoints.map(dp => {
+            // Get overlay values for this data point
+            const overlayValues = Object.entries(clientOverlays).map(([code, data]) => {
+                const overlayPoint = data.data_points.find(op => op.date === dp.date);
+                const value = overlayPoint ? overlayPoint.demand : 0;
+                return `<td>${formatNumber(value)}</td>`;
+            }).join('');
+            
+            return `
+                <tr class="${dp.over_capacity ? 'table-danger' : ''} ${dp.has_override ? 'table-warning' : ''}">
+                    <td>
+                        ${dp.date}
+                        ${dp.has_override ? '<i class="bi bi-gear text-warning ms-1" title="Config override active"></i>' : ''}
+                    </td>
+                    <td>${formatNumber(dp.demand)}</td>
+                    ${overlayValues}
+                    <td>${formatNumber(dp.capacity)}</td>
+                    <td>${dp.utilization_percent}%</td>
+                    <td>
+                        ${dp.over_capacity 
+                            ? '<span class="badge bg-danger">Over Capacity</span>' 
+                            : '<span class="badge bg-success">OK</span>'}
+                    </td>
+                </tr>
+            `;
+        }).join('');
     }
 
     function formatNumber(num) {

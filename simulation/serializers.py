@@ -135,6 +135,11 @@ class LineSimulationRequestSerializer(serializers.Serializer):
     client_id = serializers.IntegerField(required=False, allow_null=True)
     category_id = serializers.IntegerField(required=False, allow_null=True)
     product_id = serializers.IntegerField(required=False, allow_null=True)
+    overlay_client_codes = serializers.ListField(
+        child=serializers.CharField(max_length=20),
+        required=False,
+        default=list
+    )
 
 
 class CategorySimulationRequestSerializer(serializers.Serializer):

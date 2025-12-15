@@ -231,12 +231,17 @@ def run_line_simulation(line_ids: list, shift_configs: list,
                         start_date, end_date,
                         client_id: Optional[int] = None,
                         category_id: Optional[int] = None,
-                        product_id: Optional[int] = None) -> dict:
+                        product_id: Optional[int] = None,
+                        overlay_client_codes: list = None) -> dict:
     """
     Run line simulation (Dashboard 1)
     Analyze demand vs capacity for selected lines
     Considers LineConfigOverrides for date-specific capacity
+    Supports client demand overlays by code
     """
+    if overlay_client_codes is None:
+        overlay_client_codes = []
+    
     # Convert shift_configs to dict
     # When use_override is True, shift_config_id will be None to use date-based overrides
     config_dict = {}
@@ -277,6 +282,28 @@ def run_line_simulation(line_ids: list, shift_configs: list,
         category = ProductCategory.objects.filter(id=category_id).first()
         if category:
             overlay_data['category_name'] = category.name
+    
+    # Get client overlay data by code
+    client_overlays = {}
+    for client_code in overlay_client_codes:
+        client = Client.objects.filter(code__iexact=client_code).first()
+        if client:
+            client_demand = get_client_demand(client.id, line_ids, start_date, end_date)
+            # Build data points for this client
+            client_data_points = []
+            for week_start in weeks:
+                demand = client_demand.get(week_start, Decimal('0'))
+                client_data_points.append({
+                    'date': f"W{week_start.isocalendar()[1]}/{week_start.year}",
+                    'week_start': week_start,
+                    'demand': demand
+                })
+            client_overlays[client.code] = {
+                'client_name': client.name,
+                'client_id': client.id,
+                'data_points': client_data_points,
+                'total_demand': sum(dp['demand'] for dp in client_data_points)
+            }
     
     # Build data points
     data_points = []
@@ -326,7 +353,7 @@ def run_line_simulation(line_ids: list, shift_configs: list,
     avg_utilization = sum(utilizations) / len(utilizations) if utilizations else 0
     peak_utilization = max(utilizations) if utilizations else 0
     
-    return {
+    result = {
         'average_utilization': round(avg_utilization, 1),
         'peak_utilization': round(peak_utilization, 1),
         'over_capacity_periods': over_capacity_count,
@@ -335,6 +362,12 @@ def run_line_simulation(line_ids: list, shift_configs: list,
         'data_points': data_points,
         'overlay_data': overlay_data if overlay_data else None
     }
+    
+    # Add client overlays if any
+    if client_overlays:
+        result['client_overlays'] = client_overlays
+    
+    return result
 
 
 def run_category_simulation(category_id: int, line_ids: list, shift_configs: list,
