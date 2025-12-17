@@ -434,16 +434,19 @@
 
     function displayResults(result) {
         // Store results for export
+        // Defensive: ensure arrays/objects
         lastSimulationResult = result;
-        lastClientOverlays = result.client_overlays || {};
-        
+        const dataPoints = Array.isArray(result.data_points) ? result.data_points : [];
+        const clientOverlays = result.client_overlays || {};
+        lastClientOverlays = clientOverlays;
+
         // Show export buttons
         document.getElementById('exportButtons').style.display = 'inline-flex';
-        
+
         // Get granularity for dynamic labels
         const granularity = document.querySelector('input[name="granularity"]:checked')?.value || 'week';
         const periodType = granularity === 'day' ? 'Days' : 'Weeks';
-        
+
         // Update stats
         document.getElementById('avgUtilization').textContent = result.average_utilization + '%';
         document.getElementById('peakUtilization').textContent = result.peak_utilization + '%';
@@ -452,10 +455,10 @@
         document.getElementById('totalCapacity').textContent = formatNumber(result.total_capacity);
 
         // Update chart with overlay data
-        updateChart(result.data_points, result.client_overlays || {});
+        updateChart(dataPoints, clientOverlays);
 
         // Update table
-        updateTable(result.data_points, result.client_overlays || {});
+        updateTable(dataPoints, clientOverlays);
     }
     
     function getSelectedLineNames() {
