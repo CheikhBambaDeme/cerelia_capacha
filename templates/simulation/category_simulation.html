@@ -179,7 +179,7 @@
 
     async function loadCategories() {
         const data = await fetchAPI('categories/');
-        const categories = data.results || data;
+        const categories = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
         const select = document.getElementById('categorySelect');
         select.innerHTML = '<option value="">Select a category...</option>' + 
             categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
@@ -187,7 +187,7 @@
 
     async function loadLines() {
         const data = await fetchAPI('lines/');
-        allLines = data.results || data;
+        allLines = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
         const select = document.getElementById('lineSelect');
         select.innerHTML = allLines.map(line => 
             `<option value="${line.id}">${line.site_name} - ${line.name}</option>`
@@ -196,7 +196,7 @@
 
     async function loadShiftConfigs() {
         const data = await fetchAPI('shift-configs/');
-        shiftConfigs = data.results || data;
+        shiftConfigs = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
     }
 
     async function loadProductsByCategory() {
@@ -209,7 +209,7 @@
         }
 
         const data = await fetchAPI(`products/by_category/?category_id=${categoryId}`);
-        const products = data.results || data;
+        const products = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
         select.innerHTML = '<option value="">All Products in Category</option>' + 
             products.map(p => `<option value="${p.id}">${p.code} - ${p.name}</option>`).join('');
     }

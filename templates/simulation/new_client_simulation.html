@@ -193,7 +193,7 @@
 
     async function loadLines() {
         const data = await fetchAPI('lines/');
-        allLines = data.results || data;
+        allLines = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
         const select = document.getElementById('lineSelect');
         select.innerHTML = allLines.map(line => 
             `<option value="${line.id}">${line.site_name} - ${line.name}</option>`
@@ -202,7 +202,7 @@
 
     async function loadClients() {
         const data = await fetchAPI('clients/');
-        const clients = data.results || data;
+        const clients = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
         const select = document.getElementById('removeClientSelect');
         select.innerHTML = '<option value="">Don\'t remove any client</option>' + 
             clients.map(c => `<option value="${c.id}">${c.name} (Priority: ${c.priority})</option>`).join('');
@@ -210,7 +210,7 @@
 
     async function loadShiftConfigs() {
         const data = await fetchAPI('shift-configs/');
-        shiftConfigs = data.results || data;
+        shiftConfigs = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
     }
 
     function updateShiftConfigUI() {
@@ -230,7 +230,7 @@
                     <label class="form-label small">${line ? line.name : 'Line'} ${hasOverrides ? '<span class="badge bg-warning text-dark"><i class="bi bi-wrench"></i> Has Overrides</span>' : ''}</label>
                     <select class="form-select form-select-sm" data-line-id="${opt.value}">
                         <option value="override" ${hasOverrides ? 'selected' : ''}>🔧 Use Override Config (date-based)</option>
-                        ${shiftConfigs.map(sc => `<option value="${sc.id}" ${!hasOverrides && line && line.default_shift_config == sc.id ? 'selected' : ''}>${sc.name}</option>`).join('')}
+                        ${(Array.isArray(shiftConfigs) ? shiftConfigs : []).map(sc => `<option value="${sc.id}" ${!hasOverrides && line && line.default_shift_config == sc.id ? 'selected' : ''}>${sc.name}</option>`).join('')}
                     </select>
                 </div>
             `;

@@ -277,7 +277,7 @@
 
     async function loadSites() {
         const data = await fetchAPI('sites/');
-        sites = data.results || data;
+        sites = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
         
         const select = document.getElementById('siteFilter');
         select.innerHTML = '<option value="">All Sites</option>' + 
@@ -286,7 +286,7 @@
 
     async function loadLines() {
         const data = await fetchAPI('lines/');
-        allLines = data.results || data;
+        allLines = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
         
         // Populate modal line select
         const select = document.getElementById('overrideLine');
@@ -296,7 +296,7 @@
 
     async function loadOverrides() {
         const data = await fetchAPI('line-overrides/upcoming/');
-        allOverrides = data.results || data;
+        allOverrides = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
     }
 
     function getFilteredLines() {
