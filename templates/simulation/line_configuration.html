@@ -554,8 +554,15 @@
                     body: JSON.stringify(data)
                 });
             } else {
-                // Create new
-                await postAPI('/api/line-overrides/', data);
+                // Create new (use fetch with CSRF token)
+                await fetch('/api/line-overrides/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify(data)
+                });
             }
             
             overrideModal.hide();
