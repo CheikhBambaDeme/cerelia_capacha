@@ -158,6 +158,22 @@
 
 {% block extra_js %}
 <script>
+    // CSRF Token handling
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    const csrftoken = getCookie('csrftoken');
     let simulationChart = null;
     let shiftConfigs = [];
     let allLines = [];
@@ -257,11 +273,23 @@
         };
 
         try {
-            const result = await postAPI('/api/simulate/lost-client/', requestData);
+            // Use fetch directly to include CSRF token
+            const response = await fetch('/api/simulate/lost-client/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify(requestData)
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const result = await response.json();
             displayResults(result);
         } catch (error) {
             console.error('Simulation error:', error);
-            alert('Error running simulation');
+            alert('Error running simulation: ' + error.message);
         }
     }
 
