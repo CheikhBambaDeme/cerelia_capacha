@@ -153,6 +153,48 @@
                 <div id="stockAdjustmentsList" class="mb-3">
                     <!-- Stock adjustment items will appear here -->
                 </div>
+
+                <hr>
+
+                <!-- Super Chilling -->
+                <h6 style="color: #ea6d09; font-weight: bold;"><i class="bi bi-snow"></i> Super Chilling</h6>
+                <small class="text-muted d-block mb-2">Shift demand between weeks (up to 4 weeks apart). Reduce demand in one week and increase it in an earlier week for pre-production.</small>
+                
+                <div class="card bg-light mb-3">
+                    <div class="card-body p-2">
+                        <div class="row mb-2">
+                            <div class="col-6">
+                                <label class="form-label small mb-1">Reduce Week (Peak)</label>
+                                <select class="form-select form-select-sm" id="superChillReduceWeek">
+                                    <option value="">Select week...</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-1">Increase Week (Pre-prod)</label>
+                                <select class="form-select form-select-sm" id="superChillIncreaseWeek">
+                                    <option value="">Select week...</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Units to Transfer</label>
+                            <input type="number" class="form-control form-control-sm" id="superChillUnits" value="0" step="100">
+                        </div>
+                        <small class="text-muted d-block mb-2"><i class="bi bi-info-circle"></i> Transfer demand from peak week to an earlier week (up to 4 weeks before) for super chilling pre-production.</small>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-outline-info flex-grow-1" id="superChillAddBtn" onclick="addSuperChillAdjustment()">
+                                <i class="bi bi-plus-lg"></i> Add Super Chill Adjustment
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" id="superChillCancelBtn" onclick="cancelEditSuperChillAdjustment()" style="display: none;">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="superChillAdjustmentsList" class="mb-3">
+                    <!-- Super chill adjustment items will appear here -->
+                </div>
             </div>
         </div>
     </div>
@@ -269,6 +311,8 @@
     let stockAdjustments = [];  // Store stock adjustments for demand shifting
     let editingStockId = null;  // Track if we're editing an existing stock adjustment
     let availableWeeks = [];  // Store available weeks from last simulation
+    let superChillAdjustments = [];  // Store super chilling adjustments (up to 4 weeks)
+    let editingSuperChillId = null;  // Track if we're editing an existing super chill adjustment
 
     document.addEventListener('DOMContentLoaded', async function() {
         const today = new Date();
@@ -511,11 +555,21 @@
             }
         ];
         
-        // Add adjusted demand curve if stock adjustments exist
+        // Add adjusted demand curve if stock adjustments or super chill adjustments exist
         const adjustedDemand = calculateAdjustedDemand(dataPoints);
         if (adjustedDemand) {
+            // Determine label based on what adjustments are active
+            let adjustedLabel = 'Adjusted Demand';
+            if (stockAdjustments.length > 0 && superChillAdjustments.length > 0) {
+                adjustedLabel = 'Demand (Stock + Super Chill)';
+            } else if (stockAdjustments.length > 0) {
+                adjustedLabel = 'Demand with Stock';
+            } else if (superChillAdjustments.length > 0) {
+                adjustedLabel = 'Demand with Super Chill';
+            }
+            
             datasets.push({
-                label: 'Demand with Stock',
+                label: adjustedLabel,
                 data: adjustedDemand,
                 borderColor: '#17a2b8',  // Teal/cyan color
                 backgroundColor: '#17a2b840',
@@ -944,10 +998,13 @@
         const select = document.getElementById('stockWeekSelect');
         select.innerHTML = '<option value="">Select week...</option>' + 
             availableWeeks.slice(0, -1).map(week => `<option value="${week}">${week}</option>`).join('');
+        
+        // Also update super chill week selects
+        updateSuperChillWeekSelects();
     }
     
     function calculateAdjustedDemand(dataPoints) {
-        if (stockAdjustments.length === 0) return null;
+        if (stockAdjustments.length === 0 && superChillAdjustments.length === 0) return null;
         
         // Create a copy of demand data
         const adjustedDemand = dataPoints.map(dp => parseFloat(dp.demand));
@@ -963,7 +1020,197 @@
             }
         });
         
+        // Apply each super chill adjustment
+        superChillAdjustments.forEach(adj => {
+            const reduceIndex = dataPoints.findIndex(dp => dp.date === adj.reduce_week);
+            const increaseIndex = dataPoints.findIndex(dp => dp.date === adj.increase_week);
+            
+            if (reduceIndex !== -1 && increaseIndex !== -1) {
+                adjustedDemand[reduceIndex] -= adj.units;  // Reduce demand in peak week
+                adjustedDemand[increaseIndex] += adj.units;  // Increase demand in pre-prod week
+            }
+        });
+        
         return adjustedDemand;
+    }
+    
+    function updateSuperChillWeekSelects() {
+        const reduceSelect = document.getElementById('superChillReduceWeek');
+        const increaseSelect = document.getElementById('superChillIncreaseWeek');
+        
+        // Reduce week can be any week except the first 4 (need at least 4 weeks before)
+        reduceSelect.innerHTML = '<option value="">Select week...</option>' + 
+            availableWeeks.slice(4).map(week => `<option value="${week}">${week}</option>`).join('');
+        
+        // Increase week options will be populated based on reduce week selection
+        increaseSelect.innerHTML = '<option value="">Select reduce week first...</option>';
+        
+        // Add event listener for reduce week change
+        reduceSelect.onchange = updateIncreaseWeekOptions;
+    }
+    
+    function updateIncreaseWeekOptions() {
+        const reduceWeek = document.getElementById('superChillReduceWeek').value;
+        const increaseSelect = document.getElementById('superChillIncreaseWeek');
+        
+        if (!reduceWeek) {
+            increaseSelect.innerHTML = '<option value="">Select reduce week first...</option>';
+            return;
+        }
+        
+        const reduceIndex = availableWeeks.indexOf(reduceWeek);
+        // Allow selection of 1 to 4 weeks before the reduce week
+        const minIndex = Math.max(0, reduceIndex - 4);
+        const eligibleWeeks = availableWeeks.slice(minIndex, reduceIndex);
+        
+        increaseSelect.innerHTML = '<option value="">Select week...</option>' + 
+            eligibleWeeks.map((week, i) => {
+                const weeksApart = reduceIndex - (minIndex + i);
+                return `<option value="${week}">${week} (${weeksApart} week${weeksApart > 1 ? 's' : ''} before)</option>`;
+            }).join('');
+    }
+    
+    // Super Chill Adjustment Functions
+    function addSuperChillAdjustment() {
+        const reduceWeek = document.getElementById('superChillReduceWeek').value;
+        const increaseWeek = document.getElementById('superChillIncreaseWeek').value;
+        const units = parseFloat(document.getElementById('superChillUnits').value);
+        
+        if (!reduceWeek) {
+            alert('Please select a week to reduce demand from (peak week)');
+            return;
+        }
+        
+        if (!increaseWeek) {
+            alert('Please select a week to increase demand (pre-production week)');
+            return;
+        }
+        
+        if (isNaN(units) || units <= 0) {
+            alert('Please enter a valid positive number of units to transfer');
+            return;
+        }
+        
+        // Validate that increase week is before reduce week
+        const reduceIndex = availableWeeks.indexOf(reduceWeek);
+        const increaseIndex = availableWeeks.indexOf(increaseWeek);
+        
+        if (increaseIndex >= reduceIndex) {
+            alert('Increase week must be before the reduce week');
+            return;
+        }
+        
+        const weeksApart = reduceIndex - increaseIndex;
+        if (weeksApart > 4) {
+            alert('Super chilling allows maximum 4 weeks between reduce and increase weeks');
+            return;
+        }
+        
+        if (editingSuperChillId !== null) {
+            // Update existing adjustment
+            const adjIndex = superChillAdjustments.findIndex(a => a.id === editingSuperChillId);
+            if (adjIndex !== -1) {
+                superChillAdjustments[adjIndex] = {
+                    id: editingSuperChillId,
+                    reduce_week: reduceWeek,
+                    increase_week: increaseWeek,
+                    units: units,
+                    weeks_apart: weeksApart
+                };
+            }
+            editingSuperChillId = null;
+            document.getElementById('superChillAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Super Chill Adjustment';
+            document.getElementById('superChillCancelBtn').style.display = 'none';
+        } else {
+            // Create new adjustment
+            const adjId = Date.now();
+            superChillAdjustments.push({
+                id: adjId,
+                reduce_week: reduceWeek,
+                increase_week: increaseWeek,
+                units: units,
+                weeks_apart: weeksApart
+            });
+        }
+        
+        updateSuperChillAdjustmentsList();
+        document.getElementById('superChillUnits').value = 0;
+        document.getElementById('superChillReduceWeek').value = '';
+        document.getElementById('superChillIncreaseWeek').innerHTML = '<option value="">Select reduce week first...</option>';
+        
+        // Re-render chart if we have results
+        if (lastSimulationResult) {
+            updateChart(lastSimulationResult.data_points);
+        }
+    }
+    
+    function editSuperChillAdjustment(adjId) {
+        const adj = superChillAdjustments.find(a => a.id === adjId);
+        if (!adj) return;
+        
+        editingSuperChillId = adjId;
+        document.getElementById('superChillReduceWeek').value = adj.reduce_week;
+        updateIncreaseWeekOptions();
+        document.getElementById('superChillIncreaseWeek').value = adj.increase_week;
+        document.getElementById('superChillUnits').value = adj.units;
+        
+        document.getElementById('superChillAddBtn').innerHTML = '<i class="bi bi-check-lg"></i> Update Adjustment';
+        document.getElementById('superChillCancelBtn').style.display = 'inline-block';
+    }
+    
+    function cancelEditSuperChillAdjustment() {
+        editingSuperChillId = null;
+        document.getElementById('superChillAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Super Chill Adjustment';
+        document.getElementById('superChillCancelBtn').style.display = 'none';
+        document.getElementById('superChillUnits').value = 0;
+        document.getElementById('superChillReduceWeek').value = '';
+        document.getElementById('superChillIncreaseWeek').innerHTML = '<option value="">Select reduce week first...</option>';
+    }
+    
+    function removeSuperChillAdjustment(adjId) {
+        superChillAdjustments = superChillAdjustments.filter(a => a.id !== adjId);
+        if (editingSuperChillId === adjId) {
+            cancelEditSuperChillAdjustment();
+        }
+        updateSuperChillAdjustmentsList();
+        
+        // Re-render chart if we have results
+        if (lastSimulationResult) {
+            updateChart(lastSimulationResult.data_points);
+        }
+    }
+    
+    function updateSuperChillAdjustmentsList() {
+        const container = document.getElementById('superChillAdjustmentsList');
+        
+        if (superChillAdjustments.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        
+        container.innerHTML = superChillAdjustments.map(adj => {
+            const isEditing = editingSuperChillId === adj.id;
+            
+            return `
+                <div class="alert ${isEditing ? 'alert-warning' : 'alert-info'} py-1 px-2 mb-1" style="border-left: 3px solid #17a2b8;">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="small">
+                            <i class="bi bi-snow text-info"></i> <strong>${adj.reduce_week}</strong>: <span class="text-danger">-${adj.units.toLocaleString()}</span> units<br>
+                            <span class="text-muted">→ ${adj.increase_week}: <span class="text-success">+${adj.units.toLocaleString()}</span> units</span>
+                            <span class="badge bg-info ms-1">${adj.weeks_apart}W apart</span>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary py-0 px-1 me-1" onclick="editSuperChillAdjustment(${adj.id})" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeSuperChillAdjustment(${adj.id})" title="Remove">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
 </script>
 {% endblock %}
