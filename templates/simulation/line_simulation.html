@@ -13,14 +13,14 @@
 <div class="row">
     <!-- Configuration Panel -->
     <div class="col-md-4">
-        <div class="card mb-4">
+        <div class="card mb-4" style="max-height: 85vh; min-height: 500px; display: flex; flex-direction: column;">
             <div class="card-header">
-                <i class="bi bi-sliders"></i> Configuration
+                <i class="bi bi-sliders"></i> <span style="color: #ea6d09;">Configuration</span>
             </div>
-            <div class="card-body">
+            <div class="card-body flex-grow-1 overflow-auto" style="min-height: 0;">
                 <!-- Date Range -->
                 <div class="mb-3">
-                    <label class="form-label">Date Range</label>
+                    <label class="form-label" style="color: #5e3e2f; font-weight: bold;">Date Range</label>
                     <div class="row">
                         <div class="col-6">
                             <input type="date" class="form-control" id="startDate">
@@ -33,7 +33,7 @@
 
                 <!-- Line Selection -->
                 <div class="mb-3">
-                    <label class="form-label">Production Lines</label>
+                    <label class="form-label" style="color: #ea6d09; font-weight: bold;">Production Lines</label>
                     <select class="form-select" id="lineSelect" multiple size="6">
                     </select>
                     <small class="text-muted">Hold Ctrl to select multiple lines</small>
@@ -41,7 +41,7 @@
 
                 <!-- Shift Configuration per Line -->
                 <div class="mb-3">
-                    <label class="form-label">Shift Configurations</label>
+                    <label class="form-label" style="color: #5e3e2f; font-weight: bold;">Shift Configurations</label>
                     <div id="shiftConfigContainer">
                         <small class="text-muted">Select lines first</small>
                     </div>
@@ -50,23 +50,23 @@
                 <hr>
 
                 <!-- Optional Filters -->
-                <h6><i class="bi bi-funnel"></i> Optional Filters</h6>
+                <h6 style="color: #ea6d09; font-weight: bold;"><i class="bi bi-funnel"></i> Optional Filters</h6>
                 
                 <div class="mb-3">
-                    <label class="form-label">Filter by Client (codes, comma-separated)</label>
+                    <label class="form-label" style="color: #5e3e2f; font-weight: bold;">Filter by Client (codes, comma-separated)</label>
                     <input type="text" class="form-control" id="clientFilter" list="clientDatalist" placeholder="Enter client code(s), e.g. C001,C002">
                     <datalist id="clientDatalist"></datalist>
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Filter by Category</label>
+                    <label class="form-label" style="color: #ea6d09; font-weight: bold;">Filter by Category</label>
                     <select class="form-select" id="categoryFilter">
                         <option value="">All Categories</option>
                     </select>
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Filter by Product (code)</label>
+                    <label class="form-label" style="color: #5e3e2f; font-weight: bold;">Filter by Product (code)</label>
                     <input type="text" class="form-control" id="productFilter" list="productDatalist" placeholder="Enter product code">
                     <datalist id="productDatalist"></datalist>
                 </div>
@@ -74,7 +74,7 @@
                 <hr>
 
                 <!-- Client Demand Overlays -->
-                <h6><i class="bi bi-layers"></i> Client Demand Overlays</h6>
+                <h6 style="color: #ea6d09; font-weight: bold;"><i class="bi bi-layers"></i> Client Demand Overlays</h6>
                 <small class="text-muted d-block mb-2">Add client codes to overlay their demand curves</small>
                 
                 <div class="mb-3">
@@ -101,7 +101,7 @@
                 <hr>
 
                 <!-- Demand Modifications -->
-                <h6><i class="bi bi-pencil-square"></i> Demand Modifications</h6>
+                <h6 style="color: #ea6d09; font-weight: bold;"><i class="bi bi-pencil-square"></i> Demand Modifications</h6>
                 <small class="text-muted d-block mb-2">Adjust client demand by percentage for specific products</small>
                 
                 <div class="card bg-light mb-3">
