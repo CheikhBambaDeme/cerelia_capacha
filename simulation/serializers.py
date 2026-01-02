@@ -127,6 +127,15 @@ class LineShiftConfigSerializer(serializers.Serializer):
     use_override = serializers.BooleanField(required=False, default=False)
 
 
+class DemandModificationSerializer(serializers.Serializer):
+    """Demand modification for adjusting client/product demand by percentage"""
+    client_id = serializers.IntegerField()
+    product_id = serializers.IntegerField(required=False, allow_null=True)
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    percentage = serializers.DecimalField(max_digits=8, decimal_places=2)  # -100 to +infinity
+
+
 class LineSimulationRequestSerializer(serializers.Serializer):
     """Request for line simulation (Dashboard 1)"""
     line_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
@@ -150,6 +159,7 @@ class LineSimulationRequestSerializer(serializers.Serializer):
         required=False,
         default='week'
     )
+    demand_modifications = DemandModificationSerializer(many=True, required=False, allow_null=True)
 
 
 class CategorySimulationRequestSerializer(serializers.Serializer):
@@ -160,6 +170,7 @@ class CategorySimulationRequestSerializer(serializers.Serializer):
     start_date = serializers.DateField()
     end_date = serializers.DateField()
     product_id = serializers.IntegerField(required=False, allow_null=True)
+    demand_modifications = DemandModificationSerializer(many=True, required=False, allow_null=True)
 
 
 class NewClientSimulationRequestSerializer(serializers.Serializer):

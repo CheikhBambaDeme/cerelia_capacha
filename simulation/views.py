@@ -156,6 +156,23 @@ class DemandForecastViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(queryset[:500], many=True)
         return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def products_by_client(self, request):
+        """Get products that have forecasts for a specific client"""
+        client_id = request.query_params.get('client_id')
+        if not client_id:
+            return Response({'error': 'client_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get distinct product IDs from forecasts for this client
+        product_ids = DemandForecast.objects.filter(
+            client_id=client_id
+        ).values_list('product_id', flat=True).distinct()
+        
+        # Get the product details
+        products = Product.objects.filter(id__in=product_ids).order_by('name')
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
 
 
 class LineConfigOverrideViewSet(viewsets.ModelViewSet):
@@ -226,7 +243,8 @@ def simulate_line(request):
         category_id=data.get('category_id'),
         product_code=data.get('product_code'),
         overlay_client_codes=data.get('overlay_client_codes', []),
-        granularity=data.get('granularity', 'week')
+        granularity=data.get('granularity', 'week'),
+        demand_modifications=data.get('demand_modifications')
     )
     
     return Response(result)
@@ -250,7 +268,8 @@ def simulate_category(request):
         shift_configs=data['shift_configs'],
         start_date=data['start_date'],
         end_date=data['end_date'],
-        product_id=data.get('product_id')
+        product_id=data.get('product_id'),
+        demand_modifications=data.get('demand_modifications')
     )
     
     return Response(result)

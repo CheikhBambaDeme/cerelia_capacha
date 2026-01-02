@@ -352,22 +352,196 @@ def get_client_demand(client_id: int, line_ids: list, week_start, week_end) -> d
     return {f['week_start_date']: f['total_demand'] for f in forecasts}
 
 
+def apply_demand_modifications_weekly(demand_data: dict, modifications: list, 
+                                      line_ids: list, weeks: list) -> dict:
+    """
+    Apply demand modifications (percentage adjustments) to weekly demand data.
+    
+    Args:
+        demand_data: Dict mapping week_start -> demand value
+        modifications: List of modification dicts with keys:
+            - client_id: int
+            - product_id: int (optional, if None applies to all client products)
+            - start_date: date string (YYYY-MM-DD)
+            - end_date: date string (YYYY-MM-DD)
+            - percentage: float (-100 to +infinity, e.g., -50 means reduce by 50%, +20 means increase by 20%)
+        line_ids: List of production line IDs to filter products
+        weeks: List of week start dates
+    
+    Returns:
+        Modified demand_data dict
+    """
+    if not modifications:
+        return demand_data
+    
+    # Get products for the lines
+    assignments = LineProductAssignment.objects.filter(
+        line_id__in=line_ids
+    ).values_list('product_id', flat=True)
+    
+    default_products = Product.objects.filter(
+        default_line_id__in=line_ids
+    ).values_list('id', flat=True)
+    
+    valid_product_ids = set(list(assignments) + list(default_products))
+    
+    for mod in modifications:
+        client_id = mod.get('client_id')
+        product_id = mod.get('product_id')  # Can be None for all client products
+        mod_start = mod.get('start_date')
+        mod_end = mod.get('end_date')
+        percentage = Decimal(str(mod.get('percentage', 0)))
+        
+        # Parse dates if they're strings
+        if isinstance(mod_start, str):
+            mod_start = datetime.strptime(mod_start, '%Y-%m-%d').date()
+        if isinstance(mod_end, str):
+            mod_end = datetime.strptime(mod_end, '%Y-%m-%d').date()
+        
+        # Calculate the modification factor (percentage/100)
+        # e.g., -100% -> factor = -1 (remove all), +50% -> factor = 0.5 (add 50%)
+        factor = percentage / Decimal('100')
+        
+        # Get affected forecasts for this client/product within the modification date range
+        # First, find which weeks overlap with the modification period
+        mod_start_week = get_week_start(mod_start)
+        
+        forecast_filter = Q(
+            client_id=client_id,
+            week_start_date__gte=mod_start_week,
+            week_start_date__lte=mod_end
+        )
+        
+        if product_id:
+            forecast_filter &= Q(product_id=product_id)
+        else:
+            # Only products valid for these lines
+            forecast_filter &= Q(product_id__in=valid_product_ids)
+        
+        affected_forecasts = DemandForecast.objects.filter(forecast_filter).values(
+            'week_start_date'
+        ).annotate(
+            total_demand=Sum('forecast_quantity')
+        )
+        
+        # Apply modification to demand_data
+        for forecast in affected_forecasts:
+            week_start = forecast['week_start_date']
+            # Only process weeks that are in our simulation range
+            if week_start in weeks:
+                # Calculate modification amount
+                modification_amount = forecast['total_demand'] * factor
+                
+                # Initialize the week if it doesn't exist in demand_data
+                if week_start not in demand_data:
+                    demand_data[week_start] = Decimal('0')
+                
+                demand_data[week_start] += modification_amount
+                # Ensure demand doesn't go negative
+                if demand_data[week_start] < 0:
+                    demand_data[week_start] = Decimal('0')
+    
+    return demand_data
+
+
+def apply_demand_modifications_daily(demand_data: dict, modifications: list,
+                                     line_ids: list, days: list) -> dict:
+    """
+    Apply demand modifications (percentage adjustments) to daily demand data.
+    
+    Args:
+        demand_data: Dict mapping date -> demand value
+        modifications: List of modification dicts (same format as weekly)
+        line_ids: List of production line IDs to filter products
+        days: List of dates
+    
+    Returns:
+        Modified demand_data dict
+    """
+    if not modifications:
+        return demand_data
+    
+    # Get products for the lines
+    assignments = LineProductAssignment.objects.filter(
+        line_id__in=line_ids
+    ).values_list('product_id', flat=True)
+    
+    default_products = Product.objects.filter(
+        default_line_id__in=line_ids
+    ).values_list('id', flat=True)
+    
+    valid_product_ids = set(list(assignments) + list(default_products))
+    
+    for mod in modifications:
+        client_id = mod.get('client_id')
+        product_id = mod.get('product_id')
+        mod_start = mod.get('start_date')
+        mod_end = mod.get('end_date')
+        percentage = Decimal(str(mod.get('percentage', 0)))
+        
+        # Parse dates if they're strings
+        if isinstance(mod_start, str):
+            mod_start = datetime.strptime(mod_start, '%Y-%m-%d').date()
+        if isinstance(mod_end, str):
+            mod_end = datetime.strptime(mod_end, '%Y-%m-%d').date()
+        
+        factor = percentage / Decimal('100')
+        
+        # Get affected weekly forecasts
+        forecast_filter = Q(
+            client_id=client_id,
+            week_start_date__gte=get_week_start(mod_start),
+            week_start_date__lte=mod_end
+        )
+        
+        if product_id:
+            forecast_filter &= Q(product_id=product_id)
+        else:
+            forecast_filter &= Q(product_id__in=valid_product_ids)
+        
+        affected_forecasts = DemandForecast.objects.filter(forecast_filter).values(
+            'week_start_date'
+        ).annotate(
+            total_demand=Sum('forecast_quantity')
+        )
+        
+        # Distribute weekly modification to daily
+        for forecast in affected_forecasts:
+            week_start = forecast['week_start_date']
+            weekly_modification = forecast['total_demand'] * factor
+            daily_modification = weekly_modification / Decimal('5')  # Distribute to 5 working days
+            
+            # Apply to Mon-Fri of that week
+            for day_offset in range(5):
+                day = week_start + timedelta(days=day_offset)
+                if mod_start <= day <= mod_end and day in demand_data:
+                    demand_data[day] += daily_modification
+                    if demand_data[day] < 0:
+                        demand_data[day] = Decimal('0')
+    
+    return demand_data
+
+
 def run_line_simulation(line_ids: list, shift_configs: list,
                         start_date, end_date,
                         client_codes: list = None,
                         category_id: Optional[int] = None,
                         product_code: str = None,
                         overlay_client_codes: list = None,
-                        granularity: str = 'week') -> dict:
+                        granularity: str = 'week',
+                        demand_modifications: list = None) -> dict:
     """
     Run line simulation (Dashboard 1)
     Analyze demand vs capacity for selected lines
     Considers LineConfigOverrides for date-specific capacity
     Supports client demand overlays by code
     Supports both weekly and daily granularity
+    Supports demand modifications (percentage adjustments per client/product)
     """
     if overlay_client_codes is None:
         overlay_client_codes = []
+    if demand_modifications is None:
+        demand_modifications = []
 
     # Resolve product_id from product_code if provided
     product_id = None
@@ -415,6 +589,8 @@ def run_line_simulation(line_ids: list, shift_configs: list,
         category = ProductCategory.objects.filter(id=category_id).first()
         if category:
             overlay_data['category_name'] = category.name
+    if demand_modifications:
+        overlay_data['demand_modifications'] = demand_modifications
     
     # Process based on granularity
     if granularity == 'day':
@@ -422,21 +598,24 @@ def run_line_simulation(line_ids: list, shift_configs: list,
             line_ids, config_dict, start_date, end_date,
             client_id, category_id, product_id,
             overlay_client_codes, overlay_data,
-            combine_clients=combine_clients, client_ids=client_ids
+            combine_clients=combine_clients, client_ids=client_ids,
+            demand_modifications=demand_modifications
         )
     else:
         return _run_line_simulation_weekly(
             line_ids, config_dict, start_date, end_date,
             client_id, category_id, product_id,
             overlay_client_codes, overlay_data,
-            combine_clients=combine_clients, client_ids=client_ids
+            combine_clients=combine_clients, client_ids=client_ids,
+            demand_modifications=demand_modifications
         )
 
 
 def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
                                  client_id, category_id, product_id,
                                  overlay_client_codes, overlay_data,
-                                 combine_clients=False, client_ids=None):
+                                 combine_clients=False, client_ids=None,
+                                 demand_modifications=None):
     """Weekly granularity simulation"""
     # Get weeks in range
     weeks = get_weeks_in_range(start_date, end_date)
@@ -458,6 +637,12 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
         demand_data = get_demand_for_lines(
             line_ids, start_date, end_date,
             client_id, category_id, product_id
+        )
+    
+    # Apply demand modifications if any
+    if demand_modifications:
+        demand_data = apply_demand_modifications_weekly(
+            demand_data, demand_modifications, line_ids, weeks
         )
     
     # Get overlay demand if client filter is applied
@@ -556,7 +741,8 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
 def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
                                 client_id, category_id, product_id,
                                 overlay_client_codes, overlay_data,
-                                combine_clients=False, client_ids=None):
+                                combine_clients=False, client_ids=None,
+                                demand_modifications=None):
     """Daily granularity simulation"""
     # Get days in range
     days = get_days_in_range(start_date, end_date)
@@ -577,6 +763,12 @@ def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
         demand_data = get_demand_for_lines_daily(
             line_ids, start_date, end_date,
             client_id, category_id, product_id
+        )
+    
+    # Apply demand modifications if any
+    if demand_modifications:
+        demand_data = apply_demand_modifications_daily(
+            demand_data, demand_modifications, line_ids, days
         )
     
     # Get overlay demand if client filter is applied
@@ -679,11 +871,13 @@ def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
 
 def run_category_simulation(category_id: int, line_ids: list, shift_configs: list,
                             start_date, end_date,
-                            product_id: Optional[int] = None) -> dict:
+                            product_id: Optional[int] = None,
+                            demand_modifications: list = None) -> dict:
     """
     Run category simulation (Dashboard 2)
     Analyze demand for a product category vs capacity
     Considers LineConfigOverrides for date-specific capacity
+    Supports demand modifications (percentage adjustments per client/product)
     """
     # Convert shift_configs to dict - handle use_override flag
     config_dict = {}
@@ -701,11 +895,19 @@ def run_category_simulation(category_id: int, line_ids: list, shift_configs: lis
     # Get category info
     category = ProductCategory.objects.filter(id=category_id).first()
     overlay_data = {'category_name': category.name if category else 'Unknown'}
+    if demand_modifications:
+        overlay_data['demand_modifications'] = demand_modifications
     
     # Get demand for category
     demand_data = get_demand_for_category(
         category_id, line_ids, start_date, end_date, product_id
     )
+    
+    # Apply demand modifications if any
+    if demand_modifications:
+        demand_data = apply_demand_modifications_weekly(
+            demand_data, demand_modifications, line_ids, weeks
+        )
     
     if product_id:
         product = Product.objects.filter(id=product_id).first()

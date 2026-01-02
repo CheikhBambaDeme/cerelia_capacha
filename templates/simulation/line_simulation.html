@@ -31,21 +31,6 @@
                     </div>
                 </div>
 
-                <!-- Time Granularity -->
-                <div class="mb-3">
-                    <label class="form-label">Time Granularity</label>
-                    <div class="btn-group w-100" role="group">
-                        <input type="radio" class="btn-check" name="granularity" id="granularityWeek" value="week" checked>
-                        <label class="btn btn-outline-primary" for="granularityWeek">
-                            <i class="bi bi-calendar-week"></i> Weekly
-                        </label>
-                        <input type="radio" class="btn-check" name="granularity" id="granularityDay" value="day">
-                        <label class="btn btn-outline-primary" for="granularityDay">
-                            <i class="bi bi-calendar-day"></i> Daily
-                        </label>
-                    </div>
-                </div>
-
                 <!-- Line Selection -->
                 <div class="mb-3">
                     <label class="form-label">Production Lines</label>
@@ -112,6 +97,59 @@
                     </label>
                     <small class="text-muted d-block">Show sum of all overlay clients as one curve</small>
                 </div>
+
+                <hr>
+
+                <!-- Demand Modifications -->
+                <h6><i class="bi bi-pencil-square"></i> Demand Modifications</h6>
+                <small class="text-muted d-block mb-2">Adjust client demand by percentage for specific products</small>
+                
+                <div class="card bg-light mb-3">
+                    <div class="card-body p-2">
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Client</label>
+                            <select class="form-select form-select-sm" id="modClientSelect">
+                                <option value="">Select client...</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Product</label>
+                            <select class="form-select form-select-sm" id="modProductSelect" disabled>
+                                <option value="">Select product...</option>
+                            </select>
+                        </div>
+                        <div class="row mb-2">
+                            <div class="col-6">
+                                <label class="form-label small mb-1">Start Date</label>
+                                <input type="date" class="form-control form-control-sm" id="modStartDate">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-1">End Date</label>
+                                <input type="date" class="form-control form-control-sm" id="modEndDate">
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Percentage Adjustment</label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" class="form-control" id="modPercentage" value="0" min="-100" step="5">
+                                <span class="input-group-text">%</span>
+                            </div>
+                            <small class="text-muted">-100% = Remove demand, +50% = Increase by 50%</small>
+                        </div>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-outline-primary flex-grow-1" id="modAddBtn" onclick="addDemandModification()">
+                                <i class="bi bi-plus-lg"></i> Add Modification
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" id="modCancelBtn" onclick="cancelEditModification()" style="display: none;">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="demandModificationsList" class="mb-3">
+                    <!-- Demand modification items will appear here -->
+                </div>
             </div>
         </div>
     </div>
@@ -135,7 +173,7 @@
             <div class="col-md-3">
                 <div class="card stat-card danger">
                     <div class="stat-value" id="overCapacityPeriods">-</div>
-                    <div class="stat-label" id="overCapacityLabel">Over-Capacity Weeks</div>
+                    <div class="stat-label">Over-Capacity Weeks</div>
                 </div>
             </div>
             <div class="col-md-3">
@@ -229,6 +267,8 @@
     let overlayClients = [];  // Store client codes for overlay
     let lastSimulationResult = null;  // Store for export
     let lastClientOverlays = {};  // Store for export
+    let demandModifications = [];  // Store demand modifications
+    let allProducts = [];  // Store all products for modification dropdown
     
     // Colors for overlay curves
     const overlayColors = [
@@ -245,18 +285,26 @@
         
         document.getElementById('startDate').value = today.toISOString().split('T')[0];
         document.getElementById('endDate').value = sixMonthsLater.toISOString().split('T')[0];
+        
+        // Set default modification dates
+        document.getElementById('modStartDate').value = today.toISOString().split('T')[0];
+        document.getElementById('modEndDate').value = sixMonthsLater.toISOString().split('T')[0];
 
         // Load data
         await Promise.all([
             loadLines(),
             loadClients(),
             loadCategories(),
-            loadShiftConfigs()
+            loadShiftConfigs(),
+            loadAllProducts()
         ]);
 
         // Setup event listeners
         document.getElementById('lineSelect').addEventListener('change', updateShiftConfigUI);
         document.getElementById('categoryFilter').addEventListener('change', loadProductsByCategory);
+        
+        // Setup modification client change listener
+        document.getElementById('modClientSelect').addEventListener('change', loadClientProducts);
         
         // Handle Enter key for client code input
         document.getElementById('clientCodeInput').addEventListener('keypress', function(e) {
@@ -282,12 +330,54 @@
         allClients = data.results || data;
         const datalist = document.getElementById('clientDatalist');
         datalist.innerHTML = allClients.map(c => `<option value="${c.code}">${c.code} - ${c.name}</option>`).join('');
+        
+        // Also populate modification client dropdown
+        const modClientSelect = document.getElementById('modClientSelect');
+        modClientSelect.innerHTML = '<option value="">Select client...</option>' + 
+            allClients.map(c => `<option value="${c.id}" data-code="${c.code}">${c.code} - ${c.name}</option>`).join('');
     }
     
     function getClientIdByCode(code) {
         if (!code) return null;
         const client = allClients.find(c => c.code.toUpperCase() === code.toUpperCase());
         return client ? client.id : null;
+    }
+    
+    async function loadAllProducts() {
+        const data = await fetchAPI('products/');
+        allProducts = data.results || data;
+    }
+    
+    async function loadClientProducts() {
+        const clientId = document.getElementById('modClientSelect').value;
+        const productSelect = document.getElementById('modProductSelect');
+        
+        if (!clientId) {
+            productSelect.innerHTML = '<option value="">Select product...</option>';
+            productSelect.disabled = true;
+            return;
+        }
+        
+        // Get products that have demand forecasts for this client
+        try {
+            const data = await fetchAPI(`forecasts/products_by_client/?client_id=${clientId}`);
+            const products = data.results || data;
+            
+            if (products.length > 0) {
+                productSelect.innerHTML = '<option value="">All products</option>' + 
+                    products.map(p => `<option value="${p.id}" data-code="${p.code}">${p.code} - ${p.name}</option>`).join('');
+            } else {
+                // Fallback to all products if no specific endpoint
+                productSelect.innerHTML = '<option value="">All products</option>' + 
+                    allProducts.map(p => `<option value="${p.id}" data-code="${p.code}">${p.code} - ${p.name}</option>`).join('');
+            }
+            productSelect.disabled = false;
+        } catch (error) {
+            // Fallback to all products
+            productSelect.innerHTML = '<option value="">All products</option>' + 
+                allProducts.map(p => `<option value="${p.id}" data-code="${p.code}">${p.code} - ${p.name}</option>`).join('');
+            productSelect.disabled = false;
+        }
     }
 
     async function loadCategories() {
@@ -361,8 +451,6 @@
         const clientCodes = clientCodesRaw ? clientCodesRaw.split(',').map(c => c.trim()).filter(Boolean) : [];
         // Get product code
         const productCode = document.getElementById('productFilter').value.trim();
-        // Get granularity
-        const granularity = document.querySelector('input[name="granularity"]:checked').value;
 
         const requestData = {
             line_ids: selectedLineIds,
@@ -373,10 +461,10 @@
             category_id: document.getElementById('categoryFilter').value || null,
             product_code: productCode || null,
             overlay_client_codes: overlayClients.map(c => c.code),
-            granularity: granularity
+            granularity: 'week',
+            demand_modifications: demandModifications.length > 0 ? demandModifications : null
         };
         try {
-            // FIXED: Remove .then() and use await properly
             const response = await fetch('/api/simulate/line/', {
                 method: 'POST',
                 headers: {
@@ -396,7 +484,7 @@
             console.error('Simulation error:', error);
             alert('Error running simulation: ' + error.message);
         }
-    }    
+    }
 
     // Client overlay management functions
     async function addClientOverlay() {
@@ -475,15 +563,10 @@
         // Show export buttons
         document.getElementById('exportButtons').style.display = 'inline-flex';
 
-        // Get granularity for dynamic labels
-        const granularity = document.querySelector('input[name="granularity"]:checked')?.value || 'week';
-        const periodType = granularity === 'day' ? 'Days' : 'Weeks';
-
         // Update stats
         document.getElementById('avgUtilization').textContent = result.average_utilization + '%';
         document.getElementById('peakUtilization').textContent = result.peak_utilization + '%';
         document.getElementById('overCapacityPeriods').textContent = result.over_capacity_periods;
-        document.getElementById('overCapacityLabel').textContent = `Over-Capacity ${periodType}`;
         document.getElementById('totalCapacity').textContent = formatNumber(result.total_capacity);
 
         // Update chart with overlay data
@@ -930,6 +1013,157 @@
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    }
+    
+    // Demand Modification Functions
+    let editingModId = null;  // Track if we're editing an existing modification
+    
+    function addDemandModification() {
+        const clientSelect = document.getElementById('modClientSelect');
+        const productSelect = document.getElementById('modProductSelect');
+        const startDate = document.getElementById('modStartDate').value;
+        const endDate = document.getElementById('modEndDate').value;
+        const percentage = parseFloat(document.getElementById('modPercentage').value);
+        
+        if (!clientSelect.value) {
+            alert('Please select a client');
+            return;
+        }
+        
+        if (!startDate || !endDate) {
+            alert('Please select start and end dates');
+            return;
+        }
+        
+        if (isNaN(percentage)) {
+            alert('Please enter a valid percentage');
+            return;
+        }
+        
+        const clientOption = clientSelect.options[clientSelect.selectedIndex];
+        const clientCode = clientOption.dataset.code;
+        const clientName = clientOption.text;
+        
+        let productCode = null;
+        let productName = 'All products';
+        if (productSelect.value) {
+            const productOption = productSelect.options[productSelect.selectedIndex];
+            productCode = productOption.dataset.code;
+            productName = productOption.text;
+        }
+        
+        if (editingModId !== null) {
+            // Update existing modification
+            const modIndex = demandModifications.findIndex(m => m.id === editingModId);
+            if (modIndex !== -1) {
+                demandModifications[modIndex] = {
+                    id: editingModId,
+                    client_id: parseInt(clientSelect.value),
+                    client_code: clientCode,
+                    client_name: clientName,
+                    product_id: productSelect.value ? parseInt(productSelect.value) : null,
+                    product_code: productCode,
+                    product_name: productName,
+                    start_date: startDate,
+                    end_date: endDate,
+                    percentage: percentage
+                };
+            }
+            editingModId = null;
+            document.getElementById('modAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Modification';
+            document.getElementById('modCancelBtn').style.display = 'none';
+        } else {
+            // Create new modification
+            const modId = Date.now();
+            demandModifications.push({
+                id: modId,
+                client_id: parseInt(clientSelect.value),
+                client_code: clientCode,
+                client_name: clientName,
+                product_id: productSelect.value ? parseInt(productSelect.value) : null,
+                product_code: productCode,
+                product_name: productName,
+                start_date: startDate,
+                end_date: endDate,
+                percentage: percentage
+            });
+        }
+        
+        updateDemandModificationsList();
+        
+        // Reset form
+        document.getElementById('modPercentage').value = 0;
+    }
+    
+    function editDemandModification(modId) {
+        const mod = demandModifications.find(m => m.id === modId);
+        if (!mod) return;
+        
+        editingModId = modId;
+        
+        // Populate form with existing values
+        document.getElementById('modClientSelect').value = mod.client_id;
+        loadClientProducts().then(() => {
+            document.getElementById('modProductSelect').value = mod.product_id || '';
+        });
+        document.getElementById('modStartDate').value = mod.start_date;
+        document.getElementById('modEndDate').value = mod.end_date;
+        document.getElementById('modPercentage').value = mod.percentage;
+        
+        // Update button text
+        document.getElementById('modAddBtn').innerHTML = '<i class="bi bi-check-lg"></i> Update Modification';
+        document.getElementById('modCancelBtn').style.display = 'inline-block';
+    }
+    
+    function cancelEditModification() {
+        editingModId = null;
+        document.getElementById('modAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Modification';
+        document.getElementById('modCancelBtn').style.display = 'none';
+        document.getElementById('modPercentage').value = 0;
+    }
+    
+    function removeDemandModification(modId) {
+        demandModifications = demandModifications.filter(m => m.id !== modId);
+        if (editingModId === modId) {
+            cancelEditModification();
+        }
+        updateDemandModificationsList();
+    }
+    
+    function updateDemandModificationsList() {
+        const container = document.getElementById('demandModificationsList');
+        
+        if (demandModifications.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        
+        container.innerHTML = demandModifications.map(mod => {
+            const percentClass = mod.percentage < 0 ? 'text-danger' : 'text-success';
+            const percentSign = mod.percentage >= 0 ? '+' : '';
+            const percentIcon = mod.percentage === -100 ? '🚫' : (mod.percentage < 0 ? '📉' : '📈');
+            const isEditing = editingModId === mod.id;
+            
+            return `
+                <div class="alert ${isEditing ? 'alert-warning' : 'alert-secondary'} py-1 px-2 mb-1">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="small">
+                            <strong>${mod.client_code}</strong> - ${mod.product_code || 'All'}<br>
+                            <span class="${percentClass}">${percentIcon} ${percentSign}${mod.percentage}%</span>
+                            <span class="text-muted">(${mod.start_date} to ${mod.end_date})</span>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary py-0 px-1 me-1" onclick="editDemandModification(${mod.id})" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeDemandModification(${mod.id})" title="Remove">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
 </script>
 {% endblock %}
