@@ -195,6 +195,48 @@
                 <div id="superChillAdjustmentsList" class="mb-3">
                     <!-- Super chill adjustment items will appear here -->
                 </div>
+
+                <hr>
+
+                <!-- Frozen -->
+                <h6 style="color: #ea6d09; font-weight: bold;"><i class="bi bi-snow"></i><i class="bi bi-snow"></i> Frozen</h6>
+                <small class="text-muted d-block mb-2">Shift demand for frozen products (up to 9+ months apart). Reduce demand in one week and increase it in a much earlier week for long-term pre-production.</small>
+                
+                <div class="card bg-light mb-3">
+                    <div class="card-body p-2">
+                        <div class="row mb-2">
+                            <div class="col-6">
+                                <label class="form-label small mb-1">Reduce Week (Peak)</label>
+                                <select class="form-select form-select-sm" id="frozenReduceWeek">
+                                    <option value="">Select week...</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small mb-1">Increase Week (Pre-prod)</label>
+                                <select class="form-select form-select-sm" id="frozenIncreaseWeek">
+                                    <option value="">Select week...</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Units to Transfer</label>
+                            <input type="number" class="form-control form-control-sm" id="frozenUnits" value="0" step="100">
+                        </div>
+                        <small class="text-muted d-block mb-2"><i class="bi bi-info-circle"></i> Transfer demand from peak week to any earlier week for frozen pre-production (no week limit).</small>
+                        <div class="d-flex gap-1">
+                            <button class="btn btn-sm btn-outline-primary flex-grow-1" id="frozenAddBtn" onclick="addFrozenAdjustment()" style="background-color: #e3f2fd;">
+                                <i class="bi bi-plus-lg"></i> Add Frozen Adjustment
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" id="frozenCancelBtn" onclick="cancelEditFrozenAdjustment()" style="display: none;">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="frozenAdjustmentsList" class="mb-3">
+                    <!-- Frozen adjustment items will appear here -->
+                </div>
             </div>
         </div>
     </div>
@@ -313,6 +355,8 @@
     let availableWeeks = [];  // Store available weeks from last simulation
     let superChillAdjustments = [];  // Store super chilling adjustments (up to 4 weeks)
     let editingSuperChillId = null;  // Track if we're editing an existing super chill adjustment
+    let frozenAdjustments = [];  // Store frozen adjustments (unlimited weeks)
+    let editingFrozenId = null;  // Track if we're editing an existing frozen adjustment
 
     document.addEventListener('DOMContentLoaded', async function() {
         const today = new Date();
@@ -560,12 +604,19 @@
         if (adjustedDemand) {
             // Determine label based on what adjustments are active
             let adjustedLabel = 'Adjusted Demand';
-            if (stockAdjustments.length > 0 && superChillAdjustments.length > 0) {
-                adjustedLabel = 'Demand (Stock + Super Chill)';
-            } else if (stockAdjustments.length > 0) {
-                adjustedLabel = 'Demand with Stock';
-            } else if (superChillAdjustments.length > 0) {
-                adjustedLabel = 'Demand with Super Chill';
+            const hasStock = stockAdjustments.length > 0;
+            const hasSuperChill = superChillAdjustments.length > 0;
+            const hasFrozen = frozenAdjustments.length > 0;
+            
+            const parts = [];
+            if (hasStock) parts.push('Stock');
+            if (hasSuperChill) parts.push('Super Chill');
+            if (hasFrozen) parts.push('Frozen');
+            
+            if (parts.length === 1) {
+                adjustedLabel = `Demand with ${parts[0]}`;
+            } else if (parts.length > 1) {
+                adjustedLabel = `Demand (${parts.join(' + ')})`;
             }
             
             datasets.push({
@@ -1001,10 +1052,13 @@
         
         // Also update super chill week selects
         updateSuperChillWeekSelects();
+        
+        // Also update frozen week selects
+        updateFrozenWeekSelects();
     }
     
     function calculateAdjustedDemand(dataPoints) {
-        if (stockAdjustments.length === 0 && superChillAdjustments.length === 0) return null;
+        if (stockAdjustments.length === 0 && superChillAdjustments.length === 0 && frozenAdjustments.length === 0) return null;
         
         // Create a copy of demand data
         const adjustedDemand = dataPoints.map(dp => parseFloat(dp.demand));
@@ -1022,6 +1076,17 @@
         
         // Apply each super chill adjustment
         superChillAdjustments.forEach(adj => {
+            const reduceIndex = dataPoints.findIndex(dp => dp.date === adj.reduce_week);
+            const increaseIndex = dataPoints.findIndex(dp => dp.date === adj.increase_week);
+            
+            if (reduceIndex !== -1 && increaseIndex !== -1) {
+                adjustedDemand[reduceIndex] -= adj.units;  // Reduce demand in peak week
+                adjustedDemand[increaseIndex] += adj.units;  // Increase demand in pre-prod week
+            }
+        });
+        
+        // Apply each frozen adjustment
+        frozenAdjustments.forEach(adj => {
             const reduceIndex = dataPoints.findIndex(dp => dp.date === adj.reduce_week);
             const increaseIndex = dataPoints.findIndex(dp => dp.date === adj.increase_week);
             
@@ -1204,6 +1269,180 @@
                                 <i class="bi bi-pencil"></i>
                             </button>
                             <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeSuperChillAdjustment(${adj.id})" title="Remove">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    // Frozen Adjustment Functions
+    function updateFrozenWeekSelects() {
+        const reduceSelect = document.getElementById('frozenReduceWeek');
+        const increaseSelect = document.getElementById('frozenIncreaseWeek');
+        
+        // Reduce week can be any week except the first one
+        reduceSelect.innerHTML = '<option value="">Select week...</option>' + 
+            availableWeeks.slice(1).map(week => `<option value="${week}">${week}</option>`).join('');
+        
+        // Increase week options will be populated based on reduce week selection
+        increaseSelect.innerHTML = '<option value="">Select reduce week first...</option>';
+        
+        // Add event listener for reduce week change
+        reduceSelect.onchange = updateFrozenIncreaseWeekOptions;
+    }
+    
+    function updateFrozenIncreaseWeekOptions() {
+        const reduceWeek = document.getElementById('frozenReduceWeek').value;
+        const increaseSelect = document.getElementById('frozenIncreaseWeek');
+        
+        if (!reduceWeek) {
+            increaseSelect.innerHTML = '<option value="">Select reduce week first...</option>';
+            return;
+        }
+        
+        const reduceIndex = availableWeeks.indexOf(reduceWeek);
+        // Allow selection of any week before the reduce week (no limit)
+        const eligibleWeeks = availableWeeks.slice(0, reduceIndex);
+        
+        increaseSelect.innerHTML = '<option value="">Select week...</option>' + 
+            eligibleWeeks.map((week, i) => {
+                const weeksApart = reduceIndex - i;
+                return `<option value="${week}">${week} (${weeksApart} week${weeksApart > 1 ? 's' : ''} before)</option>`;
+            }).join('');
+    }
+    
+    function addFrozenAdjustment() {
+        const reduceWeek = document.getElementById('frozenReduceWeek').value;
+        const increaseWeek = document.getElementById('frozenIncreaseWeek').value;
+        const units = parseFloat(document.getElementById('frozenUnits').value);
+        
+        if (!reduceWeek) {
+            alert('Please select a week to reduce demand from (peak week)');
+            return;
+        }
+        
+        if (!increaseWeek) {
+            alert('Please select a week to increase demand (pre-production week)');
+            return;
+        }
+        
+        if (isNaN(units) || units <= 0) {
+            alert('Please enter a valid positive number of units to transfer');
+            return;
+        }
+        
+        // Validate that increase week is before reduce week
+        const reduceIndex = availableWeeks.indexOf(reduceWeek);
+        const increaseIndex = availableWeeks.indexOf(increaseWeek);
+        
+        if (increaseIndex >= reduceIndex) {
+            alert('Increase week must be before the reduce week');
+            return;
+        }
+        
+        const weeksApart = reduceIndex - increaseIndex;
+        
+        if (editingFrozenId !== null) {
+            // Update existing adjustment
+            const adjIndex = frozenAdjustments.findIndex(a => a.id === editingFrozenId);
+            if (adjIndex !== -1) {
+                frozenAdjustments[adjIndex] = {
+                    id: editingFrozenId,
+                    reduce_week: reduceWeek,
+                    increase_week: increaseWeek,
+                    units: units,
+                    weeks_apart: weeksApart
+                };
+            }
+            editingFrozenId = null;
+            document.getElementById('frozenAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Frozen Adjustment';
+            document.getElementById('frozenCancelBtn').style.display = 'none';
+        } else {
+            // Create new adjustment
+            const adjId = Date.now();
+            frozenAdjustments.push({
+                id: adjId,
+                reduce_week: reduceWeek,
+                increase_week: increaseWeek,
+                units: units,
+                weeks_apart: weeksApart
+            });
+        }
+        
+        updateFrozenAdjustmentsList();
+        document.getElementById('frozenUnits').value = 0;
+        document.getElementById('frozenReduceWeek').value = '';
+        document.getElementById('frozenIncreaseWeek').innerHTML = '<option value="">Select reduce week first...</option>';
+        
+        // Re-render chart if we have results
+        if (lastSimulationResult) {
+            updateChart(lastSimulationResult.data_points);
+        }
+    }
+    
+    function editFrozenAdjustment(adjId) {
+        const adj = frozenAdjustments.find(a => a.id === adjId);
+        if (!adj) return;
+        
+        editingFrozenId = adjId;
+        document.getElementById('frozenReduceWeek').value = adj.reduce_week;
+        updateFrozenIncreaseWeekOptions();
+        document.getElementById('frozenIncreaseWeek').value = adj.increase_week;
+        document.getElementById('frozenUnits').value = adj.units;
+        
+        document.getElementById('frozenAddBtn').innerHTML = '<i class="bi bi-check-lg"></i> Update Adjustment';
+        document.getElementById('frozenCancelBtn').style.display = 'inline-block';
+    }
+    
+    function cancelEditFrozenAdjustment() {
+        editingFrozenId = null;
+        document.getElementById('frozenAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Frozen Adjustment';
+        document.getElementById('frozenCancelBtn').style.display = 'none';
+        document.getElementById('frozenUnits').value = 0;
+        document.getElementById('frozenReduceWeek').value = '';
+        document.getElementById('frozenIncreaseWeek').innerHTML = '<option value="">Select reduce week first...</option>';
+    }
+    
+    function removeFrozenAdjustment(adjId) {
+        frozenAdjustments = frozenAdjustments.filter(a => a.id !== adjId);
+        if (editingFrozenId === adjId) {
+            cancelEditFrozenAdjustment();
+        }
+        updateFrozenAdjustmentsList();
+        
+        // Re-render chart if we have results
+        if (lastSimulationResult) {
+            updateChart(lastSimulationResult.data_points);
+        }
+    }
+    
+    function updateFrozenAdjustmentsList() {
+        const container = document.getElementById('frozenAdjustmentsList');
+        
+        if (frozenAdjustments.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        
+        container.innerHTML = frozenAdjustments.map(adj => {
+            const isEditing = editingFrozenId === adj.id;
+            
+            return `
+                <div class="alert ${isEditing ? 'alert-warning' : 'alert-primary'} py-1 px-2 mb-1" style="border-left: 3px solid #0d6efd;">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="small">
+                            <i class="bi bi-snow text-primary"></i><i class="bi bi-snow text-primary"></i> <strong>${adj.reduce_week}</strong>: <span class="text-danger">-${adj.units.toLocaleString()}</span> units<br>
+                            <span class="text-muted">→ ${adj.increase_week}: <span class="text-success">+${adj.units.toLocaleString()}</span> units</span>
+                            <span class="badge bg-primary ms-1">${adj.weeks_apart}W apart</span>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary py-0 px-1 me-1" onclick="editFrozenAdjustment(${adj.id})" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeFrozenAdjustment(${adj.id})" title="Remove">
                                 <i class="bi bi-x"></i>
                             </button>
                         </div>
