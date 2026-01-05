@@ -11,7 +11,6 @@ class Site(models.Model):
     """Production site (factory location)"""
     name = models.CharField(max_length=100, unique=True)
     code = models.CharField(max_length=20, unique=True)
-    address = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -274,30 +273,18 @@ class LineConfigOverride(models.Model):
 
 class Client(models.Model):
     """Customer/Client (Lidl, Auchan, Carrefour, etc.)"""
-    PRIORITY_CHOICES = [
-        (1, 'Critical - Never cut'),
-        (2, 'High Priority'),
-        (3, 'Medium Priority'),
-        (4, 'Low Priority'),
-        (5, 'Flexible - Can be reduced first'),
-    ]
-    
     name = models.CharField(max_length=200, unique=True)
     code = models.CharField(max_length=20, unique=True)
-    priority = models.IntegerField(choices=PRIORITY_CHOICES, default=3)
-    contact_email = models.EmailField(blank=True)
-    contract_start_date = models.DateField(null=True, blank=True)
-    contract_end_date = models.DateField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['priority', 'name']
+        ordering = ['name']
 
     def __str__(self):
-        return f"{self.name} (P{self.priority})"
+        return self.name
 
 
 class Product(models.Model):
@@ -327,12 +314,6 @@ class Product(models.Model):
         blank=True,
         help_text='Weight in kg per unit'
     )
-    shelf_life_days = models.IntegerField(
-        null=True, 
-        blank=True,
-        help_text='Product shelf life in days'
-    )
-    is_fresh = models.BooleanField(default=True, help_text='Fresh product (short shelf life)')
     
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -369,12 +350,6 @@ class LineProductAssignment(models.Model):
         null=True,
         blank=True,
         help_text='Override production rate for this product on this line'
-    )
-    
-    # Setup/changeover time when switching to this product
-    changeover_time_minutes = models.IntegerField(
-        default=30,
-        help_text='Time to set up line for this product'
     )
 
     class Meta:
@@ -413,25 +388,6 @@ class DemandForecast(models.Model):
         max_digits=12, 
         decimal_places=2,
         validators=[MinValueValidator(0)]
-    )
-    
-    # Optional: Actual quantity (for historical comparison)
-    actual_quantity = models.DecimalField(
-        max_digits=12, 
-        decimal_places=2,
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(0)]
-    )
-    
-    # Forecast confidence/accuracy
-    confidence_level = models.DecimalField(
-        max_digits=4,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(0), MaxValueValidator(1)],
-        help_text='Forecast confidence (0-1)'
     )
     
     created_at = models.DateTimeField(auto_now_add=True)

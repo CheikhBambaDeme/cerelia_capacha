@@ -102,14 +102,14 @@ class ProductionLineViewSet(viewsets.ModelViewSet):
 class ClientViewSet(viewsets.ModelViewSet):
     queryset = Client.objects.filter(is_active=True)
     serializer_class = ClientSerializer
-    filterset_fields = ['priority', 'is_active', 'code']
+    filterset_fields = ['is_active', 'code']
     search_fields = ['name', 'code']
 
 
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.filter(is_active=True)
     serializer_class = ProductSerializer
-    filterset_fields = ['category', 'is_fresh', 'is_active']
+    filterset_fields = ['category', 'is_active']
     search_fields = ['code', 'name']
     
     @action(detail=False, methods=['get'])

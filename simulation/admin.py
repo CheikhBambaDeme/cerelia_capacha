@@ -46,23 +46,23 @@ class ProductionLineAdmin(admin.ModelAdmin):
 
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
-    list_display = ['code', 'name', 'priority', 'is_active', 'contract_start_date', 'contract_end_date']
-    list_filter = ['priority', 'is_active']
+    list_display = ['code', 'name', 'is_active']
+    list_filter = ['is_active']
     search_fields = ['code', 'name']
-    ordering = ['priority', 'name']
+    ordering = ['name']
 
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ['code', 'name', 'category', 'default_line', 'is_fresh', 'is_active']
-    list_filter = ['category', 'is_fresh', 'is_active']
+    list_display = ['code', 'name', 'category', 'default_line', 'is_active']
+    list_filter = ['category', 'is_active']
     search_fields = ['code', 'name']
     autocomplete_fields = ['category', 'default_line']
 
 
 @admin.register(LineProductAssignment)
 class LineProductAssignmentAdmin(admin.ModelAdmin):
-    list_display = ['product', 'line', 'is_default', 'production_rate_per_hour', 'changeover_time_minutes']
+    list_display = ['product', 'line', 'is_default', 'production_rate_per_hour']
     list_filter = ['is_default', 'line__site', 'line']
     search_fields = ['product__code', 'product__name', 'line__name']
     autocomplete_fields = ['line', 'product']
@@ -71,7 +71,7 @@ class LineProductAssignmentAdmin(admin.ModelAdmin):
 @admin.register(DemandForecast)
 class DemandForecastAdmin(admin.ModelAdmin):
     list_display = ['client', 'product', 'year', 'week_number', 'week_start_date', 
-                    'forecast_quantity', 'actual_quantity']
+                    'forecast_quantity']
     list_filter = ['year', 'client', 'product__category']
     search_fields = ['client__name', 'product__code', 'product__name']
     autocomplete_fields = ['client', 'product']

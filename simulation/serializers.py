@@ -12,7 +12,7 @@ from .models import (
 class SiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Site
-        fields = ['id', 'name', 'code', 'address', 'is_active']
+        fields = ['id', 'name', 'code', 'is_active']
 
 
 class ProductCategorySerializer(serializers.ModelSerializer):
@@ -74,13 +74,9 @@ class LineConfigOverrideSerializer(serializers.ModelSerializer):
 
 
 class ClientSerializer(serializers.ModelSerializer):
-    priority_display = serializers.CharField(source='get_priority_display', read_only=True)
-    
     class Meta:
         model = Client
-        fields = ['id', 'name', 'code', 'priority', 'priority_display', 
-                  'contact_email', 'contract_start_date', 'contract_end_date',
-                  'is_active', 'notes']
+        fields = ['id', 'name', 'code', 'is_active', 'notes']
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -90,8 +86,7 @@ class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = ['id', 'code', 'name', 'category', 'category_name', 
-                  'default_line', 'default_line_name', 'unit_weight',
-                  'shelf_life_days', 'is_fresh', 'is_active']
+                  'default_line', 'default_line_name', 'unit_weight', 'is_active']
 
 
 class LineProductAssignmentSerializer(serializers.ModelSerializer):
@@ -102,8 +97,7 @@ class LineProductAssignmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = LineProductAssignment
         fields = ['id', 'line', 'line_name', 'product', 'product_code', 
-                  'product_name', 'is_default', 'production_rate_per_hour',
-                  'changeover_time_minutes']
+                  'product_name', 'is_default', 'production_rate_per_hour']
 
 
 class DemandForecastSerializer(serializers.ModelSerializer):
@@ -115,7 +109,7 @@ class DemandForecastSerializer(serializers.ModelSerializer):
         model = DemandForecast
         fields = ['id', 'client', 'client_name', 'product', 'product_code',
                   'product_name', 'year', 'week_number', 'week_start_date',
-                  'forecast_quantity', 'actual_quantity', 'confidence_level']
+                  'forecast_quantity']
 
 
 # Simulation Request/Response Serializers
