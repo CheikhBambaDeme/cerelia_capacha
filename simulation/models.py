@@ -120,14 +120,29 @@ class ProductionLine(models.Model):
         """
         Get the active configuration for a specific date.
         Returns override config if one exists for that date, otherwise returns default.
+        Handles recurrent overrides with periodicity.
         """
-        override = self.config_overrides.filter(
+        from datetime import timedelta
+        
+        overrides = self.config_overrides.filter(
             start_date__lte=target_date,
             end_date__gte=target_date,
             is_active=True
-        ).first()
+        )
         
-        if override:
+        for override in overrides:
+            # If it's a recurrent override, check if target_date falls on a valid recurrence week
+            if override.is_recurrent and override.recurrence_weeks:
+                # Calculate the week number from start_date
+                days_since_start = (target_date - override.start_date).days
+                weeks_since_start = days_since_start // 7
+                
+                # Check if this week is a valid recurrence week
+                if weeks_since_start % override.recurrence_weeks != 0:
+                    # This week is not a valid recurrence, skip this override
+                    continue
+            
+            # Found a valid override
             return {
                 'type': 'override',
                 'override': override,
@@ -138,7 +153,9 @@ class ProductionLine(models.Model):
                 'weekly_hours': override.weekly_hours,
                 'reason': override.reason
             }
-        elif self.default_shift_config:
+        
+        # No valid override found, use default
+        if self.default_shift_config:
             return {
                 'type': 'default',
                 'override': None,
@@ -211,6 +228,15 @@ class LineConfigOverride(models.Model):
         max_length=200,
         blank=True,
         help_text='Reason for override (e.g., Maintenance, Peak Season, Cleaning)'
+    )
+    is_recurrent = models.BooleanField(
+        default=False,
+        help_text='Whether this override repeats periodically (e.g., seasonal events)'
+    )
+    recurrence_weeks = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text='Number of weeks between recurrences (e.g., 3 = every 3 weeks from start date)'
     )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

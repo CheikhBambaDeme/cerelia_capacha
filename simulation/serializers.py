@@ -69,7 +69,7 @@ class LineConfigOverrideSerializer(serializers.ModelSerializer):
         model = LineConfigOverride
         fields = ['id', 'line', 'line_name', 'site_name', 'start_date', 'end_date',
                   'shifts_per_day', 'hours_per_shift', 'include_saturday', 
-                  'include_sunday', 'reason', 'is_active', 'config_display', 
+                  'include_sunday', 'reason', 'is_recurrent', 'recurrence_weeks', 'is_active', 'config_display', 
                   'weekly_hours', 'created_at']
 
 
