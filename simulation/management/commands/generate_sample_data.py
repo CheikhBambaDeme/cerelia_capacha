@@ -128,8 +128,6 @@ class Command(BaseCommand):
                     'category': category,
                     'default_line': random.choice(lines),
                     'unit_weight': Decimal(str(round(random.uniform(0.2, 2.0), 3))),
-                    'shelf_life_days': random.randint(5, 30),
-                    'is_fresh': random.choice([True, True, True, False]),
                 }
                 product, created = Product.objects.get_or_create(
                     code=product_data['code'], defaults=product_data
@@ -197,7 +195,6 @@ class Command(BaseCommand):
                         defaults={
                             'week_start_date': week_start,
                             'forecast_quantity': Decimal(str(demand)),
-                            'confidence_level': Decimal(str(round(random.uniform(0.7, 0.95), 2)))
                         }
                     )
                     if created:

@@ -166,6 +166,26 @@
                     </div>
                 </div>
                 
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="overrideRecurrent" onchange="toggleRecurrenceOptions()">
+                        <label class="form-check-label" for="overrideRecurrent">
+                            <i class="bi bi-arrow-repeat"></i> Recurrent event
+                        </label>
+                        <small class="text-muted d-block">Check this if this override repeats periodically</small>
+                    </div>
+                </div>
+                
+                <div class="mb-3" id="recurrenceOptions" style="display: none;">
+                    <label class="form-label">Recurrence Period</label>
+                    <div class="input-group">
+                        <span class="input-group-text">Every</span>
+                        <input type="number" class="form-control" id="overrideRecurrenceWeeks" min="1" max="52" value="1">
+                        <span class="input-group-text">week(s)</span>
+                    </div>
+                    <small class="text-muted">e.g., "Every 3 weeks" starting from the start date</small>
+                </div>
+                
                 <hr>
                 <h6 class="mb-3"><i class="bi bi-gear"></i> Shift Configuration</h6>
                 
@@ -246,6 +266,40 @@
         </div>
     </div>
 </div>
+<!-- Edit Efficiency Modal -->
+<div class="modal fade" id="editEfficiencyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-speedometer2"></i> Edit Line Efficiency</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="efficiencyLineId">
+                
+                <div class="mb-3">
+                    <label class="form-label">Efficiency Factor *</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="efficiencyValue" 
+                               min="0" max="100" step="1" value="85">
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <small class="text-muted">Typical values: 70-95%. This affects the effective capacity of the line.</small>
+                </div>
+                
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> Changing the efficiency will affect all capacity calculations for this line.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveEfficiency()">
+                    <i class="bi bi-check"></i> Save Efficiency
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -254,9 +308,11 @@
     let allOverrides = [];
     let sites = [];
     let overrideModal = null;
+    let efficiencyModal = null;
 
     document.addEventListener('DOMContentLoaded', async function() {
         overrideModal = new bootstrap.Modal(document.getElementById('addOverrideModal'));
+        efficiencyModal = new bootstrap.Modal(document.getElementById('editEfficiencyModal'));
         
         await loadData();
         
@@ -277,7 +333,7 @@
 
     async function loadSites() {
         const data = await fetchAPI('sites/');
-        sites = data.results || data;
+        sites = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
         
         const select = document.getElementById('siteFilter');
         select.innerHTML = '<option value="">All Sites</option>' + 
@@ -286,7 +342,7 @@
 
     async function loadLines() {
         const data = await fetchAPI('lines/');
-        allLines = data.results || data;
+        allLines = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
         
         // Populate modal line select
         const select = document.getElementById('overrideLine');
@@ -296,7 +352,7 @@
 
     async function loadOverrides() {
         const data = await fetchAPI('line-overrides/upcoming/');
-        allOverrides = data.results || data;
+        allOverrides = Array.isArray(data.results) ? data.results : (Array.isArray(data) ? data : []);
     }
 
     function getFilteredLines() {
@@ -361,6 +417,9 @@
                                 <i class="bi bi-speedometer2 text-muted"></i>
                                 ${line.base_capacity_per_hour} units/h @ ${Math.round(line.efficiency_factor * 100)}%
                             </span>
+                            <button class="btn btn-sm btn-outline-secondary me-1" onclick="openEditEfficiency(${line.id}, ${line.efficiency_factor})">
+                                <i class="bi bi-speedometer2"></i> Edit Efficiency
+                            </button>
                             <button class="btn btn-sm btn-outline-primary" onclick="openAddOverride(${line.id})">
                                 <i class="bi bi-plus"></i> Add Override
                             </button>
@@ -404,6 +463,10 @@
                         statusText = 'Past';
                     }
                     
+                    const recurrentBadge = o.is_recurrent 
+                        ? `<span class="badge bg-info ms-1"><i class="bi bi-arrow-repeat"></i> Every ${o.recurrence_weeks || 1} week${(o.recurrence_weeks || 1) > 1 ? 's' : ''}</span>` 
+                        : '';
+                    
                     return `
                         <div class="override-card card ${statusClass}" style="min-width: 200px;">
                             <div class="card-body py-2 px-3">
@@ -411,6 +474,7 @@
                                     <div>
                                         <span class="config-badge">${o.config_display}</span>
                                         <span class="badge bg-${statusClass === 'active' ? 'success' : statusClass === 'future' ? 'primary' : 'secondary'} ms-1">${statusText}</span>
+                                        ${recurrentBadge}
                                         ${o.reason ? `<br><small class="text-muted">${o.reason}</small>` : ''}
                                     </div>
                                     <div class="dropdown">
@@ -456,6 +520,11 @@
         document.getElementById('totalWeeklyHours').textContent = Math.round(totalHours);
     }
 
+    function toggleRecurrenceOptions() {
+        const isRecurrent = document.getElementById('overrideRecurrent').checked;
+        document.getElementById('recurrenceOptions').style.display = isRecurrent ? 'block' : 'none';
+    }
+
     function updatePreview() {
         const shifts = parseInt(document.getElementById('overrideShifts').value);
         const hours = parseFloat(document.getElementById('overrideHours').value) || 0;
@@ -494,6 +563,9 @@
         document.getElementById('overrideReason').value = '';
         document.getElementById('overrideStartDate').value = '';
         document.getElementById('overrideEndDate').value = '';
+        document.getElementById('overrideRecurrent').checked = false;
+        document.getElementById('overrideRecurrenceWeeks').value = 1;
+        document.getElementById('recurrenceOptions').style.display = 'none';
         applyPreset(3, 8, false, false);
         
         overrideModal.show();
@@ -513,6 +585,9 @@
         document.getElementById('overrideHours').value = override.hours_per_shift;
         document.getElementById('overrideSaturday').checked = override.include_saturday;
         document.getElementById('overrideSunday').checked = override.include_sunday;
+        document.getElementById('overrideRecurrent').checked = override.is_recurrent || false;
+        document.getElementById('overrideRecurrenceWeeks').value = override.recurrence_weeks || 1;
+        toggleRecurrenceOptions();
         updatePreview();
         
         overrideModal.show();
@@ -529,6 +604,8 @@
             include_saturday: document.getElementById('overrideSaturday').checked,
             include_sunday: document.getElementById('overrideSunday').checked,
             reason: document.getElementById('overrideReason').value,
+            is_recurrent: document.getElementById('overrideRecurrent').checked,
+            recurrence_weeks: document.getElementById('overrideRecurrent').checked ? parseInt(document.getElementById('overrideRecurrenceWeeks').value) : null,
             is_active: true
         };
         
@@ -554,8 +631,15 @@
                     body: JSON.stringify(data)
                 });
             } else {
-                // Create new
-                await postAPI('/api/line-overrides/', data);
+                // Create new (use fetch with CSRF token)
+                await fetch('/api/line-overrides/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify(data)
+                });
             }
             
             overrideModal.hide();
@@ -598,6 +682,42 @@
             }
         }
         return cookieValue;
+    }
+
+    function openEditEfficiency(lineId, currentEfficiency) {
+        document.getElementById('efficiencyLineId').value = lineId;
+        document.getElementById('efficiencyValue').value = Math.round(currentEfficiency * 100);
+        efficiencyModal.show();
+    }
+
+    async function saveEfficiency() {
+        const lineId = document.getElementById('efficiencyLineId').value;
+        const efficiencyPercent = parseFloat(document.getElementById('efficiencyValue').value);
+        
+        if (isNaN(efficiencyPercent) || efficiencyPercent < 0 || efficiencyPercent > 100) {
+            alert('Please enter a valid efficiency between 0 and 100');
+            return;
+        }
+        
+        const efficiencyFactor = efficiencyPercent / 100;
+        
+        try {
+            await fetch(`/api/lines/${lineId}/`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({ efficiency_factor: efficiencyFactor })
+            });
+            
+            efficiencyModal.hide();
+            await loadData();
+            alert('Efficiency updated successfully');
+        } catch (error) {
+            console.error('Error saving efficiency:', error);
+            alert('Error saving efficiency');
+        }
     }
 </script>
 {% endblock %}

@@ -11,7 +11,6 @@ class Site(models.Model):
     """Production site (factory location)"""
     name = models.CharField(max_length=100, unique=True)
     code = models.CharField(max_length=20, unique=True)
-    address = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -120,14 +119,29 @@ class ProductionLine(models.Model):
         """
         Get the active configuration for a specific date.
         Returns override config if one exists for that date, otherwise returns default.
+        Handles recurrent overrides with periodicity.
         """
-        override = self.config_overrides.filter(
+        from datetime import timedelta
+        
+        overrides = self.config_overrides.filter(
             start_date__lte=target_date,
             end_date__gte=target_date,
             is_active=True
-        ).first()
+        )
         
-        if override:
+        for override in overrides:
+            # If it's a recurrent override, check if target_date falls on a valid recurrence week
+            if override.is_recurrent and override.recurrence_weeks:
+                # Calculate the week number from start_date
+                days_since_start = (target_date - override.start_date).days
+                weeks_since_start = days_since_start // 7
+                
+                # Check if this week is a valid recurrence week
+                if weeks_since_start % override.recurrence_weeks != 0:
+                    # This week is not a valid recurrence, skip this override
+                    continue
+            
+            # Found a valid override
             return {
                 'type': 'override',
                 'override': override,
@@ -138,7 +152,9 @@ class ProductionLine(models.Model):
                 'weekly_hours': override.weekly_hours,
                 'reason': override.reason
             }
-        elif self.default_shift_config:
+        
+        # No valid override found, use default
+        if self.default_shift_config:
             return {
                 'type': 'default',
                 'override': None,
@@ -212,6 +228,15 @@ class LineConfigOverride(models.Model):
         blank=True,
         help_text='Reason for override (e.g., Maintenance, Peak Season, Cleaning)'
     )
+    is_recurrent = models.BooleanField(
+        default=False,
+        help_text='Whether this override repeats periodically (e.g., seasonal events)'
+    )
+    recurrence_weeks = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text='Number of weeks between recurrences (e.g., 3 = every 3 weeks from start date)'
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -248,30 +273,18 @@ class LineConfigOverride(models.Model):
 
 class Client(models.Model):
     """Customer/Client (Lidl, Auchan, Carrefour, etc.)"""
-    PRIORITY_CHOICES = [
-        (1, 'Critical - Never cut'),
-        (2, 'High Priority'),
-        (3, 'Medium Priority'),
-        (4, 'Low Priority'),
-        (5, 'Flexible - Can be reduced first'),
-    ]
-    
     name = models.CharField(max_length=200, unique=True)
     code = models.CharField(max_length=20, unique=True)
-    priority = models.IntegerField(choices=PRIORITY_CHOICES, default=3)
-    contact_email = models.EmailField(blank=True)
-    contract_start_date = models.DateField(null=True, blank=True)
-    contract_end_date = models.DateField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['priority', 'name']
+        ordering = ['name']
 
     def __str__(self):
-        return f"{self.name} (P{self.priority})"
+        return self.name
 
 
 class Product(models.Model):
@@ -301,12 +314,6 @@ class Product(models.Model):
         blank=True,
         help_text='Weight in kg per unit'
     )
-    shelf_life_days = models.IntegerField(
-        null=True, 
-        blank=True,
-        help_text='Product shelf life in days'
-    )
-    is_fresh = models.BooleanField(default=True, help_text='Fresh product (short shelf life)')
     
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -343,12 +350,6 @@ class LineProductAssignment(models.Model):
         null=True,
         blank=True,
         help_text='Override production rate for this product on this line'
-    )
-    
-    # Setup/changeover time when switching to this product
-    changeover_time_minutes = models.IntegerField(
-        default=30,
-        help_text='Time to set up line for this product'
     )
 
     class Meta:
@@ -387,25 +388,6 @@ class DemandForecast(models.Model):
         max_digits=12, 
         decimal_places=2,
         validators=[MinValueValidator(0)]
-    )
-    
-    # Optional: Actual quantity (for historical comparison)
-    actual_quantity = models.DecimalField(
-        max_digits=12, 
-        decimal_places=2,
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(0)]
-    )
-    
-    # Forecast confidence/accuracy
-    confidence_level = models.DecimalField(
-        max_digits=4,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        validators=[MinValueValidator(0), MaxValueValidator(1)],
-        help_text='Forecast confidence (0-1)'
     )
     
     created_at = models.DateTimeField(auto_now_add=True)

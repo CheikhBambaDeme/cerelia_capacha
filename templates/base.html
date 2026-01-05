@@ -253,16 +253,6 @@
                             <i class="bi bi-grid-3x3-gap"></i> Category Simulation
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.resolver_match.url_name == 'new_client_simulation' %}active{% endif %}" href="{% url 'new_client_simulation' %}">
-                            <i class="bi bi-person-plus"></i> New Client
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.resolver_match.url_name == 'lost_client_simulation' %}active{% endif %}" href="{% url 'lost_client_simulation' %}">
-                            <i class="bi bi-person-dash"></i> Lost Client
-                        </a>
-                    </li>
                     <hr class="text-white-50 mx-3">
                     <li class="nav-item">
                         <a class="nav-link" href="/admin/" target="_blank">
