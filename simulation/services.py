@@ -1131,7 +1131,10 @@ def calculate_lab_line_daily_capacity(lab_line, for_date) -> Decimal:
     return daily_capacity
 
 
-def get_lab_forecasts_demand_weekly(lab_line_ids: list, start_date, end_date) -> dict:
+def get_lab_forecasts_demand_weekly(lab_line_ids: list, start_date, end_date,
+                                     lab_client_id: Optional[int] = None,
+                                     lab_product_id: Optional[int] = None,
+                                     lab_category_id: Optional[int] = None) -> dict:
     """
     Get weekly demand from Lab Forecasts that target lab lines
     Distributes annual demand using seasonality from reference product
@@ -1140,17 +1143,35 @@ def get_lab_forecasts_demand_weekly(lab_line_ids: list, start_date, end_date) ->
         lab_line_ids: List of LabLine IDs
         start_date: Simulation start date
         end_date: Simulation end date
+        lab_client_id: Optional Lab Client ID to filter by
+        lab_product_id: Optional Lab Product ID to filter by
+        lab_category_id: Optional Lab Category ID to filter by
     
     Returns:
         Dict mapping week_start_date -> total_demand
     """
-    # Get lab forecasts for lab products on these lines
-    # LabForecast uses lab_product field, and LabProduct uses lab_default_line field
-    lab_forecasts = LabForecast.objects.filter(
+    from django.db.models import Q
+    
+    # Build filter for lab forecasts
+    forecast_filter = Q(
         lab_product__lab_default_line_id__in=lab_line_ids,
         start_date__lte=end_date,
         end_date__gte=start_date
-    ).select_related('lab_product', 'reference_product')
+    )
+    
+    # Apply lab client filter
+    if lab_client_id:
+        forecast_filter &= Q(lab_client_id=lab_client_id)
+    
+    # Apply lab product filter
+    if lab_product_id:
+        forecast_filter &= Q(lab_product_id=lab_product_id)
+    
+    # Apply lab category filter
+    if lab_category_id:
+        forecast_filter &= Q(lab_product__lab_category_id=lab_category_id)
+    
+    lab_forecasts = LabForecast.objects.filter(forecast_filter).select_related('lab_product', 'reference_product')
     
     weekly_demand = {}
     weeks = get_weeks_in_range(start_date, end_date)
@@ -1231,6 +1252,13 @@ def get_lab_forecasts_demand_weekly(lab_line_ids: list, start_date, end_date) ->
 def run_lab_simulation(line_ids: list, lab_line_ids: list,
                        start_date, end_date,
                        include_lab_forecasts: bool = True,
+                       client_codes: list = None,
+                       product_code: str = None,
+                       category_id: Optional[int] = None,
+                       lab_client_id: Optional[int] = None,
+                       lab_product_code: str = None,
+                       lab_category_id: Optional[int] = None,
+                       overlay_client_codes: list = None,
                        demand_modifications: list = None) -> dict:
     """
     Run Lab Simulation - combines real and lab (fictive) data
@@ -1241,13 +1269,55 @@ def run_lab_simulation(line_ids: list, lab_line_ids: list,
         start_date: Simulation start date
         end_date: Simulation end date
         include_lab_forecasts: Whether to include Lab Forecasts in demand
-        demand_modifications: Optional list of demand modifications (not yet implemented for lab)
-        include_lab_forecasts: Whether to include Lab Forecasts in demand
+        client_codes: Optional list of client codes to filter real data
+        product_code: Optional product code to filter real data
+        category_id: Optional category ID to filter real data
+        lab_client_id: Optional Lab Client ID to filter lab data
+        lab_product_code: Optional Lab Product code to filter lab data
+        lab_category_id: Optional Lab Category ID to filter lab data
+        overlay_client_codes: Optional list of client codes for demand overlays
+        demand_modifications: Optional list of demand modifications
     
     Returns:
         Simulation results with combined capacity and demand
     """
+    if overlay_client_codes is None:
+        overlay_client_codes = []
+    if demand_modifications is None:
+        demand_modifications = []
+    
     weeks = get_weeks_in_range(start_date, end_date)
+    
+    # Resolve product_id from product_code if provided
+    product_id = None
+    if product_code:
+        product = Product.objects.filter(code__iexact=product_code).first()
+        if product:
+            product_id = product.id
+    
+    # Resolve lab_product_id from lab_product_code if provided
+    lab_product_id = None
+    if lab_product_code:
+        lab_product = LabProduct.objects.filter(code__iexact=lab_product_code).first()
+        if lab_product:
+            lab_product_id = lab_product.id
+    
+    # Resolve client_ids from client_codes if provided
+    client_ids = []
+    if client_codes:
+        for code in client_codes:
+            client = Client.objects.filter(code__iexact=code).first()
+            if client:
+                client_ids.append(client.id)
+    
+    # If multiple client_ids, combine their demand
+    client_id = None
+    combine_clients = False
+    if client_ids:
+        if len(client_ids) == 1:
+            client_id = client_ids[0]
+        else:
+            combine_clients = True
     
     # Calculate capacity from real lines (using default config)
     real_capacity_by_week = {}
@@ -1262,15 +1332,75 @@ def run_lab_simulation(line_ids: list, lab_line_ids: list,
         for lab_line in lab_lines:
             lab_capacity_by_week[week_start] += calculate_lab_line_weekly_capacity(lab_line)
     
-    # Get real demand (all forecasts for products on selected real lines)
+    # Get real demand (with filters)
     real_demand_by_week = {}
     if line_ids:
-        real_demand_by_week = get_demand_for_lines(line_ids, start_date, end_date)
+        if combine_clients and client_ids:
+            # Sum demand for all client_ids
+            for cid in client_ids:
+                client_demand = get_demand_for_lines(
+                    line_ids, start_date, end_date, cid, category_id, product_id
+                )
+                for week, val in client_demand.items():
+                    real_demand_by_week[week] = real_demand_by_week.get(week, Decimal('0')) + val
+        else:
+            real_demand_by_week = get_demand_for_lines(
+                line_ids, start_date, end_date, client_id, category_id, product_id
+            )
     
-    # Get lab demand (from lab forecasts)
+    # Get lab demand (from lab forecasts) with lab filters
     lab_demand_by_week = {}
     if include_lab_forecasts and lab_line_ids:
-        lab_demand_by_week = get_lab_forecasts_demand_weekly(lab_line_ids, start_date, end_date)
+        lab_demand_by_week = get_lab_forecasts_demand_weekly(
+            lab_line_ids, start_date, end_date,
+            lab_client_id=lab_client_id,
+            lab_product_id=lab_product_id,
+            lab_category_id=lab_category_id
+        )
+    
+    # Get overlay data if filters are applied
+    overlay_data = {}
+    if client_codes:
+        overlay_data['client_codes'] = client_codes
+    if product_code:
+        overlay_data['product_code'] = product_code
+    if category_id:
+        category = ProductCategory.objects.filter(id=category_id).first()
+        if category:
+            overlay_data['category_name'] = category.name
+    # Add lab filters to overlay data
+    if lab_client_id:
+        lab_client = LabClient.objects.filter(id=lab_client_id).first()
+        if lab_client:
+            overlay_data['lab_client_name'] = lab_client.name
+    if lab_product_code:
+        overlay_data['lab_product_code'] = lab_product_code
+    if lab_category_id:
+        lab_category = LabCategory.objects.filter(id=lab_category_id).first()
+        if lab_category:
+            overlay_data['lab_category_name'] = lab_category.name
+    
+    # Get client overlay data by code
+    client_overlays = {}
+    for client_code in overlay_client_codes:
+        client = Client.objects.filter(code__iexact=client_code).first()
+        if client and line_ids:
+            client_demand = get_client_demand(client.id, line_ids, start_date, end_date)
+            # Build data points for this client
+            client_data_points = []
+            for week_start in weeks:
+                demand = client_demand.get(week_start, Decimal('0'))
+                client_data_points.append({
+                    'date': f"W{week_start.isocalendar()[1]}/{week_start.year}",
+                    'week_start': week_start,
+                    'demand': demand
+                })
+            client_overlays[client.code] = {
+                'client_name': client.name,
+                'client_id': client.id,
+                'data_points': client_data_points,
+                'total_demand': sum(dp['demand'] for dp in client_data_points)
+            }
     
     # Build data points
     data_points = []
@@ -1320,7 +1450,7 @@ def run_lab_simulation(line_ids: list, lab_line_ids: list,
     avg_utilization = sum(utilizations) / len(utilizations) if utilizations else 0
     peak_utilization = max(utilizations) if utilizations else 0
     
-    return {
+    result = {
         'granularity': 'week',
         'average_utilization': round(avg_utilization, 1),
         'peak_utilization': round(peak_utilization, 1),
@@ -1330,5 +1460,12 @@ def run_lab_simulation(line_ids: list, lab_line_ids: list,
         'data_points': data_points,
         'real_lines_count': len(line_ids) if line_ids else 0,
         'lab_lines_count': len(lab_line_ids) if lab_line_ids else 0,
-        'include_lab_forecasts': include_lab_forecasts
+        'include_lab_forecasts': include_lab_forecasts,
+        'overlay_data': overlay_data if overlay_data else None
     }
+    
+    # Add client overlays if any
+    if client_overlays:
+        result['client_overlays'] = client_overlays
+    
+    return result

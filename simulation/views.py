@@ -432,6 +432,13 @@ def simulate_lab(request):
         start_date=data['start_date'],
         end_date=data['end_date'],
         include_lab_forecasts=data.get('include_lab_forecasts', True),
+        client_codes=data.get('client_codes'),
+        product_code=data.get('product_code'),
+        category_id=data.get('category_id'),
+        lab_client_id=data.get('lab_client_id'),
+        lab_product_code=data.get('lab_product_code'),
+        lab_category_id=data.get('lab_category_id'),
+        overlay_client_codes=data.get('overlay_client_codes', []),
         demand_modifications=data.get('demand_modifications')
     )
     

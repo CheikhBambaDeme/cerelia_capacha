@@ -284,4 +284,22 @@ class LabSimulationRequestSerializer(serializers.Serializer):
     end_date = serializers.DateField()
     # Include lab data
     include_lab_forecasts = serializers.BooleanField(required=False, default=True)
+    # Real data filters
+    client_codes = serializers.ListField(
+        child=serializers.CharField(max_length=20),
+        required=False,
+        allow_null=True
+    )
+    product_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    category_id = serializers.IntegerField(required=False, allow_null=True)
+    # Lab data filters
+    lab_client_id = serializers.IntegerField(required=False, allow_null=True)
+    lab_product_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    lab_category_id = serializers.IntegerField(required=False, allow_null=True)
+    # Overlays
+    overlay_client_codes = serializers.ListField(
+        child=serializers.CharField(max_length=20),
+        required=False,
+        default=list
+    )
     demand_modifications = DemandModificationSerializer(many=True, required=False, allow_null=True)
