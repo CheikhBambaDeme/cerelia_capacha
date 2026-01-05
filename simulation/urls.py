@@ -29,8 +29,6 @@ urlpatterns = [
     # Template views (Dashboard pages)
     path('', views.dashboard_home, name='dashboard_home'),
     path('line-simulation/', views.line_simulation_view, name='line_simulation'),
-    path('new-client/', views.new_client_simulation_view, name='new_client_simulation'),
-    path('lost-client/', views.lost_client_simulation_view, name='lost_client_simulation'),
     path('line-configuration/', views.line_configuration_view, name='line_configuration'),
     
     # Lab template views

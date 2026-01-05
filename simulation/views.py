@@ -44,16 +44,6 @@ def line_simulation_view(request):
     return render(request, 'simulation/line_simulation.html')
 
 
-def new_client_simulation_view(request):
-    """New client simulation dashboard (Dashboard 3)"""
-    return render(request, 'simulation/new_client_simulation.html')
-
-
-def lost_client_simulation_view(request):
-    """Lost client simulation dashboard (Dashboard 4)"""
-    return render(request, 'simulation/lost_client_simulation.html')
-
-
 def line_configuration_view(request):
     """Line configuration page for manual adjustments"""
     return render(request, 'simulation/line_configuration.html')
