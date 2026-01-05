@@ -16,12 +16,12 @@ from .serializers import (
     SiteSerializer, ProductCategorySerializer, ShiftConfigurationSerializer,
     ProductionLineSerializer, ClientSerializer, ProductSerializer,
     LineProductAssignmentSerializer, DemandForecastSerializer,
-    LineSimulationRequestSerializer, CategorySimulationRequestSerializer,
+    LineSimulationRequestSerializer,
     NewClientSimulationRequestSerializer, LostClientSimulationRequestSerializer,
     LineConfigOverrideSerializer
 )
 from .services import (
-    run_line_simulation, run_category_simulation,
+    run_line_simulation,
     run_new_client_simulation, run_lost_client_simulation
 )
 
@@ -38,11 +38,6 @@ def dashboard_home(request):
 def line_simulation_view(request):
     """Line simulation dashboard (Dashboard 1)"""
     return render(request, 'simulation/line_simulation.html')
-
-
-def category_simulation_view(request):
-    """Category simulation dashboard (Dashboard 2)"""
-    return render(request, 'simulation/category_simulation.html')
 
 
 def new_client_simulation_view(request):
@@ -244,31 +239,6 @@ def simulate_line(request):
         product_code=data.get('product_code'),
         overlay_client_codes=data.get('overlay_client_codes', []),
         granularity=data.get('granularity', 'week'),
-        demand_modifications=data.get('demand_modifications')
-    )
-    
-    return Response(result)
-
-
-@api_view(['POST'])
-def simulate_category(request):
-    """
-    Category Simulation API (Dashboard 2)
-    Analyze demand for a product category vs capacity
-    """
-    serializer = CategorySimulationRequestSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    data = serializer.validated_data
-    
-    result = run_category_simulation(
-        category_id=data['category_id'],
-        line_ids=data['line_ids'],
-        shift_configs=data['shift_configs'],
-        start_date=data['start_date'],
-        end_date=data['end_date'],
-        product_id=data.get('product_id'),
         demand_modifications=data.get('demand_modifications')
     )
     

@@ -22,7 +22,6 @@ urlpatterns = [
     # Template views (Dashboard pages)
     path('', views.dashboard_home, name='dashboard_home'),
     path('line-simulation/', views.line_simulation_view, name='line_simulation'),
-    path('category-simulation/', views.category_simulation_view, name='category_simulation'),
     path('new-client/', views.new_client_simulation_view, name='new_client_simulation'),
     path('lost-client/', views.lost_client_simulation_view, name='lost_client_simulation'),
     path('line-configuration/', views.line_configuration_view, name='line_configuration'),
@@ -32,7 +31,6 @@ urlpatterns = [
     
     # Simulation API endpoints
     path('api/simulate/line/', views.simulate_line, name='api_simulate_line'),
-    path('api/simulate/category/', views.simulate_category, name='api_simulate_category'),
     path('api/simulate/new-client/', views.simulate_new_client, name='api_simulate_new_client'),
     path('api/simulate/lost-client/', views.simulate_lost_client, name='api_simulate_lost_client'),
     

@@ -156,17 +156,6 @@ class LineSimulationRequestSerializer(serializers.Serializer):
     demand_modifications = DemandModificationSerializer(many=True, required=False, allow_null=True)
 
 
-class CategorySimulationRequestSerializer(serializers.Serializer):
-    """Request for category simulation (Dashboard 2)"""
-    category_id = serializers.IntegerField()
-    line_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
-    shift_configs = LineShiftConfigSerializer(many=True)
-    start_date = serializers.DateField()
-    end_date = serializers.DateField()
-    product_id = serializers.IntegerField(required=False, allow_null=True)
-    demand_modifications = DemandModificationSerializer(many=True, required=False, allow_null=True)
-
-
 class NewClientSimulationRequestSerializer(serializers.Serializer):
     """Request for new client simulation (Dashboard 3)"""
     line_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
