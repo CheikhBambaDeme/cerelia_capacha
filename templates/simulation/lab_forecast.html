@@ -1,0 +1,471 @@
+{% extends 'base.html' %}
+
+{% block title %}Lab Forecast - Cerelia Simulation{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-graph-up-arrow"></i> Lab Forecast</h2>
+    <span class="badge bg-info">Lab Testing Environment</span>
+</div>
+
+<div class="row">
+    <!-- Create Form -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-plus-circle"></i> Create Fictive Demand Forecast
+            </div>
+            <div class="card-body">
+                <form id="createForecastForm">
+                    <!-- Client Selection -->
+                    <div class="mb-3">
+                        <label class="form-label">Client *</label>
+                        <div class="mb-2">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="clientType" 
+                                       id="realClient" value="real" checked>
+                                <label class="form-check-label" for="realClient">Real Client</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="clientType" 
+                                       id="labClientRadio" value="lab">
+                                <label class="form-check-label" for="labClientRadio">Lab Client</label>
+                            </div>
+                        </div>
+                        <select class="form-select" id="clientSelect" required>
+                            <option value="">Select a client...</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Product Selection -->
+                    <div class="mb-3">
+                        <label class="form-label">Product *</label>
+                        <div class="mb-2">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="productType" 
+                                       id="realProduct" value="real" checked>
+                                <label class="form-check-label" for="realProduct">Real Product</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="productType" 
+                                       id="labProductRadio" value="lab">
+                                <label class="form-check-label" for="labProductRadio">Lab Product</label>
+                            </div>
+                        </div>
+                        <select class="form-select" id="productSelect" required>
+                            <option value="">Select a product...</option>
+                        </select>
+                    </div>
+                    
+                    <hr>
+                    
+                    <!-- Date Range -->
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label for="startDate" class="form-label">Start Date *</label>
+                            <input type="date" class="form-control" id="startDate" required>
+                        </div>
+                        <div class="col-6">
+                            <label for="endDate" class="form-label">End Date *</label>
+                            <input type="date" class="form-control" id="endDate" required>
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <!-- Annual Demand & Reference -->
+                    <div class="mb-3">
+                        <label for="annualDemand" class="form-label">Annual Demand *</label>
+                        <input type="number" class="form-control" id="annualDemand" required 
+                               min="0" step="1" placeholder="e.g., 500000">
+                        <small class="text-muted">Total demand to distribute over the date range</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="referenceProductCode" class="form-label">Reference Product Code *</label>
+                        <input type="text" class="form-control" id="referenceProductCode" required
+                               placeholder="e.g., PIZ0001" list="productCodesList">
+                        <datalist id="productCodesList"></datalist>
+                        <small class="text-muted">
+                            Enter a real product code to copy its seasonality pattern
+                        </small>
+                    </div>
+                    
+                    <div class="alert alert-info py-2" id="seasonalityInfo" style="display: none;">
+                        <small>
+                            <i class="bi bi-info-circle"></i>
+                            <span id="seasonalityInfoText"></span>
+                        </small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-plus-lg"></i> Create Forecast
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Existing Lab Forecasts -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-list"></i> Lab Forecasts</span>
+                <span class="badge bg-secondary" id="forecastCount">0</span>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm" id="forecastsTable">
+                        <thead>
+                            <tr>
+                                <th>Client</th>
+                                <th>Product</th>
+                                <th>Period</th>
+                                <th>Annual Demand</th>
+                                <th>Reference</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Dynamic content -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="noForecasts" class="text-center text-muted py-4" style="display: none;">
+                    <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                    <p class="mt-2">No lab forecasts created yet</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const API_LAB_FORECASTS = '/api/lab/forecasts/';
+const API_CLIENTS = '/api/clients/';
+const API_LAB_CLIENTS = '/api/lab/clients/';
+const API_PRODUCTS = '/api/products/';
+const API_LAB_PRODUCTS = '/api/lab/products/';
+
+let realClients = [];
+let labClients = [];
+let realProducts = [];
+let labProducts = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Set default dates
+    const today = new Date();
+    const nextYear = new Date(today);
+    nextYear.setFullYear(nextYear.getFullYear() + 1);
+    
+    document.getElementById('startDate').value = today.toISOString().split('T')[0];
+    document.getElementById('endDate').value = nextYear.toISOString().split('T')[0];
+    
+    loadAllData();
+    
+    document.getElementById('createForecastForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        await createForecast();
+    });
+    
+    // Radio button change handlers
+    document.querySelectorAll('input[name="clientType"]').forEach(radio => {
+        radio.addEventListener('change', updateClientSelect);
+    });
+    
+    document.querySelectorAll('input[name="productType"]').forEach(radio => {
+        radio.addEventListener('change', updateProductSelect);
+    });
+    
+    // Reference product validation
+    document.getElementById('referenceProductCode').addEventListener('blur', validateReferenceProduct);
+});
+
+async function loadAllData() {
+    await Promise.all([
+        loadRealClients(),
+        loadLabClients(),
+        loadRealProducts(),
+        loadLabProducts(),
+        loadForecasts()
+    ]);
+    updateClientSelect();
+    updateProductSelect();
+    populateProductCodesList();
+}
+
+async function loadRealClients() {
+    try {
+        const response = await fetch(API_CLIENTS);
+        const data = await response.json();
+        realClients = data.results || data;
+    } catch (error) {
+        console.error('Error loading clients:', error);
+    }
+}
+
+async function loadLabClients() {
+    try {
+        const response = await fetch(API_LAB_CLIENTS);
+        const data = await response.json();
+        labClients = data.results || data;
+    } catch (error) {
+        console.error('Error loading lab clients:', error);
+    }
+}
+
+async function loadRealProducts() {
+    try {
+        const response = await fetch(API_PRODUCTS);
+        const data = await response.json();
+        realProducts = data.results || data;
+    } catch (error) {
+        console.error('Error loading products:', error);
+    }
+}
+
+async function loadLabProducts() {
+    try {
+        const response = await fetch(API_LAB_PRODUCTS);
+        const data = await response.json();
+        labProducts = data.results || data;
+    } catch (error) {
+        console.error('Error loading lab products:', error);
+    }
+}
+
+function updateClientSelect() {
+    const isLab = document.getElementById('labClientRadio').checked;
+    const select = document.getElementById('clientSelect');
+    const clients = isLab ? labClients : realClients;
+    
+    select.innerHTML = '<option value="">Select a client...</option>';
+    clients.forEach(client => {
+        const option = document.createElement('option');
+        option.value = client.id;
+        option.textContent = isLab ? `[LAB] ${client.name}` : `${client.code} - ${client.name}`;
+        select.appendChild(option);
+    });
+}
+
+function updateProductSelect() {
+    const isLab = document.getElementById('labProductRadio').checked;
+    const select = document.getElementById('productSelect');
+    const products = isLab ? labProducts : realProducts;
+    
+    select.innerHTML = '<option value="">Select a product...</option>';
+    products.forEach(prod => {
+        const option = document.createElement('option');
+        option.value = prod.id;
+        option.textContent = isLab ? `[LAB] ${prod.code} - ${prod.name}` : `${prod.code} - ${prod.name}`;
+        select.appendChild(option);
+    });
+}
+
+function populateProductCodesList() {
+    const datalist = document.getElementById('productCodesList');
+    datalist.innerHTML = '';
+    realProducts.forEach(prod => {
+        const option = document.createElement('option');
+        option.value = prod.code;
+        datalist.appendChild(option);
+    });
+}
+
+async function validateReferenceProduct() {
+    const code = document.getElementById('referenceProductCode').value.trim();
+    const infoDiv = document.getElementById('seasonalityInfo');
+    const infoText = document.getElementById('seasonalityInfoText');
+    
+    if (!code) {
+        infoDiv.style.display = 'none';
+        return;
+    }
+    
+    const product = realProducts.find(p => p.code.toLowerCase() === code.toLowerCase());
+    
+    if (product) {
+        infoDiv.style.display = 'block';
+        infoDiv.className = 'alert alert-success py-2';
+        infoText.textContent = `Found: ${product.name} - Seasonality will be copied from this product's demand pattern`;
+    } else {
+        infoDiv.style.display = 'block';
+        infoDiv.className = 'alert alert-warning py-2';
+        infoText.textContent = 'Product code not found. Please enter a valid existing product code.';
+    }
+}
+
+async function loadForecasts() {
+    try {
+        const response = await fetch(API_LAB_FORECASTS);
+        const data = await response.json();
+        const forecasts = data.results || data;
+        
+        console.log('Loaded forecasts:', forecasts);
+        
+        const tbody = document.querySelector('#forecastsTable tbody');
+        const noForecasts = document.getElementById('noForecasts');
+        
+        if (!forecasts || forecasts.length === 0) {
+            tbody.innerHTML = '';
+            noForecasts.style.display = 'block';
+        } else {
+            noForecasts.style.display = 'none';
+            tbody.innerHTML = forecasts.map(fc => `
+                <tr>
+                    <td>${fc.client_name}</td>
+                    <td>${fc.product_name}</td>
+                    <td>
+                        <small>${fc.start_date} to ${fc.end_date}</small>
+                    </td>
+                    <td><strong>${parseFloat(fc.annual_demand).toLocaleString()}</strong></td>
+                    <td><code>${fc.reference_product_code || 'N/A'}</code></td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteForecast(${fc.id})">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        document.getElementById('forecastCount').textContent = forecasts.length;
+    } catch (error) {
+        console.error('Error loading forecasts:', error);
+    }
+}
+
+async function createForecast() {
+    const isLabClient = document.getElementById('labClientRadio').checked;
+    const isLabProduct = document.getElementById('labProductRadio').checked;
+    const referenceCode = document.getElementById('referenceProductCode').value.trim();
+    
+    console.log('Creating forecast with:', { isLabClient, isLabProduct, referenceCode });
+    console.log('Real products loaded:', realProducts.length);
+    
+    // Find reference product
+    const referenceProduct = realProducts.find(p => p.code.toLowerCase() === referenceCode.toLowerCase());
+    
+    console.log('Reference product found:', referenceProduct);
+    
+    if (!referenceProduct) {
+        showToast('Please enter a valid reference product code', 'danger');
+        return;
+    }
+    
+    const data = {
+        annual_demand: parseFloat(document.getElementById('annualDemand').value),
+        start_date: document.getElementById('startDate').value,
+        end_date: document.getElementById('endDate').value,
+        reference_product: referenceProduct.id
+    };
+    
+    const clientId = document.getElementById('clientSelect').value;
+    if (clientId) {
+        if (isLabClient) {
+            data.lab_client = parseInt(clientId);
+        } else {
+            data.client = parseInt(clientId);
+        }
+    } else {
+        showToast('Please select a client', 'danger');
+        return;
+    }
+    
+    const productId = document.getElementById('productSelect').value;
+    if (productId) {
+        if (isLabProduct) {
+            data.lab_product = parseInt(productId);
+        } else {
+            data.product = parseInt(productId);
+        }
+    } else {
+        showToast('Please select a product', 'danger');
+        return;
+    }
+    
+    console.log('Sending data:', data);
+    
+    try {
+        const response = await fetch(API_LAB_FORECASTS, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify(data)
+        });
+        
+        console.log('Response status:', response.status);
+        
+        if (response.ok) {
+            const result = await response.json();
+            console.log('Created forecast:', result);
+            document.getElementById('createForecastForm').reset();
+            // Reset dates to defaults
+            const today = new Date();
+            const nextYear = new Date(today);
+            nextYear.setFullYear(nextYear.getFullYear() + 1);
+            document.getElementById('startDate').value = today.toISOString().split('T')[0];
+            document.getElementById('endDate').value = nextYear.toISOString().split('T')[0];
+            document.getElementById('seasonalityInfo').style.display = 'none';
+            await loadForecasts();
+            showToast('Forecast created successfully!', 'success');
+        } else {
+            const error = await response.json();
+            console.error('API Error:', error);
+            showToast('Error: ' + JSON.stringify(error), 'danger');
+        }
+    } catch (error) {
+        console.error('Error creating forecast:', error);
+        showToast('Error creating forecast: ' + error.message, 'danger');
+    }
+}
+
+async function deleteForecast(id) {
+    if (!confirm('Are you sure you want to delete this forecast?')) return;
+    
+    try {
+        const response = await fetch(`${API_LAB_FORECASTS}${id}/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+        
+        if (response.ok) {
+            loadForecasts();
+            showToast('Forecast deleted', 'warning');
+        }
+    } catch (error) {
+        console.error('Error deleting forecast:', error);
+    }
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function showToast(message, type) {
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${type} position-fixed`;
+    toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 250px;';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+</script>
+{% endblock %}

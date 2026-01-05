@@ -406,3 +406,280 @@ class DemandForecast(models.Model):
     def __str__(self):
         return f"{self.client.code} - {self.product.code} - W{self.week_number}/{self.year}: {self.forecast_quantity}"
 
+
+# =============================================================================
+# Lab Models (Fictive data for simulation testing)
+# =============================================================================
+
+class LabCategory(models.Model):
+    """Fictive product category for lab testing"""
+    name = models.CharField(max_length=100)
+    code = models.CharField(max_length=20, unique=True, editable=False)
+    color_code = models.CharField(max_length=7, default='#9b59b6', help_text='Hex color for charts')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Lab Category'
+        verbose_name_plural = 'Lab Categories'
+        ordering = ['name']
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            # Generate code like LCat1, LCat2, etc.
+            last = LabCategory.objects.order_by('-id').first()
+            next_num = (last.id + 1) if last else 1
+            self.code = f"LCat{next_num}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"[LAB] {self.name}"
+
+
+class LabLine(models.Model):
+    """Fictive production line for lab testing"""
+    name = models.CharField(max_length=100)
+    code = models.CharField(max_length=20, unique=True, editable=False)
+    site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name='lab_lines')
+    
+    # Shift configuration (stored directly, not as FK)
+    shifts_per_day = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(4)],
+        default=2
+    )
+    hours_per_shift = models.DecimalField(
+        max_digits=4, 
+        decimal_places=2,
+        default=8
+    )
+    include_saturday = models.BooleanField(default=False)
+    include_sunday = models.BooleanField(default=False)
+    
+    base_capacity_per_hour = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        help_text='Units produced per hour at 100% efficiency'
+    )
+    efficiency_factor = models.DecimalField(
+        max_digits=4, 
+        decimal_places=2,
+        default=0.85,
+        validators=[MinValueValidator(0), MaxValueValidator(1)],
+        help_text='Production efficiency (0-1)'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Lab Line'
+        verbose_name_plural = 'Lab Lines'
+        ordering = ['name']
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            # Generate code like LL1, LL2, etc.
+            last = LabLine.objects.order_by('-id').first()
+            next_num = (last.id + 1) if last else 1
+            self.code = f"LL{next_num}"
+        super().save(*args, **kwargs)
+
+    @property
+    def weekly_hours(self):
+        """Calculate total weekly hours for this configuration"""
+        days_per_week = 5  # Mon-Fri
+        if self.include_saturday:
+            days_per_week += 1
+        if self.include_sunday:
+            days_per_week += 1
+        return float(self.shifts_per_day * self.hours_per_shift * days_per_week)
+
+    def get_weekly_capacity(self):
+        """Calculate weekly capacity"""
+        from decimal import Decimal
+        weekly_hours = Decimal(str(self.weekly_hours))
+        return float(self.base_capacity_per_hour * self.efficiency_factor * weekly_hours)
+
+    def __str__(self):
+        return f"[LAB] {self.code} - {self.name}"
+
+
+class LabClient(models.Model):
+    """Fictive client for lab testing"""
+    name = models.CharField(max_length=200)
+    code = models.CharField(max_length=20, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Lab Client'
+        verbose_name_plural = 'Lab Clients'
+        ordering = ['name']
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            # Generate code like LC1, LC2, etc.
+            last = LabClient.objects.order_by('-id').first()
+            next_num = (last.id + 1) if last else 1
+            self.code = f"LC{next_num}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"[LAB] {self.name}"
+
+
+class LabProduct(models.Model):
+    """Fictive product for lab testing"""
+    name = models.CharField(max_length=200)
+    code = models.CharField(max_length=50, unique=True, editable=False)
+    
+    # Category can be real or lab category
+    category = models.ForeignKey(
+        ProductCategory, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='lab_products'
+    )
+    lab_category = models.ForeignKey(
+        LabCategory, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='products'
+    )
+    
+    # Default line can be real or lab line
+    default_line = models.ForeignKey(
+        'ProductionLine',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='lab_products'
+    )
+    lab_default_line = models.ForeignKey(
+        LabLine,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='default_products'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Lab Product'
+        verbose_name_plural = 'Lab Products'
+        ordering = ['name']
+
+    def save(self, *args, **kwargs):
+        if not self.code:
+            # Generate code like LP1, LP2, etc.
+            last = LabProduct.objects.order_by('-id').first()
+            next_num = (last.id + 1) if last else 1
+            self.code = f"LP{next_num}"
+        super().save(*args, **kwargs)
+
+    @property
+    def category_name(self):
+        if self.category:
+            return self.category.name
+        elif self.lab_category:
+            return f"[LAB] {self.lab_category.name}"
+        return "No Category"
+
+    @property
+    def default_line_name(self):
+        if self.default_line:
+            return self.default_line.name
+        elif self.lab_default_line:
+            return f"[LAB] {self.lab_default_line.name}"
+        return "No Default Line"
+
+    def __str__(self):
+        return f"[LAB] {self.code} - {self.name}"
+
+
+class LabForecast(models.Model):
+    """Fictive demand forecast for lab testing"""
+    # Client can be real or lab client
+    client = models.ForeignKey(
+        Client, 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True,
+        related_name='lab_forecasts'
+    )
+    lab_client = models.ForeignKey(
+        LabClient, 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True,
+        related_name='forecasts'
+    )
+    
+    # Product can be real or lab product
+    product = models.ForeignKey(
+        Product, 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True,
+        related_name='lab_forecasts'
+    )
+    lab_product = models.ForeignKey(
+        LabProduct, 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True,
+        related_name='forecasts'
+    )
+    
+    # Reference product for seasonality
+    reference_product = models.ForeignKey(
+        Product,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='lab_forecast_references',
+        help_text='Product to copy seasonality pattern from'
+    )
+    
+    # Annual demand to distribute
+    annual_demand = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        help_text='Total annual demand to distribute with seasonality'
+    )
+    
+    # Date range for the forecast
+    start_date = models.DateField()
+    end_date = models.DateField()
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Lab Forecast'
+        verbose_name_plural = 'Lab Forecasts'
+        ordering = ['-created_at']
+
+    @property
+    def client_name(self):
+        if self.client:
+            return self.client.name
+        elif self.lab_client:
+            return f"[LAB] {self.lab_client.name}"
+        return "Unknown"
+
+    @property
+    def product_name(self):
+        if self.product:
+            return f"{self.product.code} - {self.product.name}"
+        elif self.lab_product:
+            return f"[LAB] {self.lab_product.code} - {self.lab_product.name}"
+        return "Unknown"
+
+    def __str__(self):
+        return f"[LAB] {self.client_name} - {self.product_name} ({self.annual_demand}/year)"
+

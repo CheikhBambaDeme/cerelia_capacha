@@ -9,7 +9,8 @@ from typing import Optional
 from django.db.models import Sum, Q
 from .models import (
     ProductionLine, ShiftConfiguration, Product, Client,
-    ProductCategory, DemandForecast, LineProductAssignment
+    ProductCategory, DemandForecast, LineProductAssignment,
+    LabLine, LabForecast, LabProduct
 )
 
 
@@ -1058,4 +1059,276 @@ def run_lost_client_simulation(line_ids: list, shift_configs: list,
         'total_demand': total_demand,
         'data_points': data_points,
         'overlay_data': overlay_data
+    }
+
+
+# =============================================================================
+# LAB SIMULATION FUNCTIONS
+# =============================================================================
+
+def calculate_lab_line_weekly_capacity(lab_line, for_date=None) -> Decimal:
+    """
+    Calculate weekly capacity for a Lab Line
+    
+    Args:
+        lab_line: LabLine instance
+        for_date: Optional date (not used for lab lines - they have fixed config)
+    
+    Returns:
+        Weekly capacity in units
+    """
+    # Calculate working days per week
+    working_days = 5  # Mon-Fri
+    if lab_line.include_saturday:
+        working_days += 1
+    if lab_line.include_sunday:
+        working_days += 1
+    
+    # Calculate daily hours
+    daily_hours = lab_line.shifts_per_day * lab_line.hours_per_shift
+    
+    # Calculate weekly capacity
+    weekly_hours = daily_hours * working_days
+    weekly_capacity = (
+        Decimal(str(lab_line.base_capacity_per_hour)) * 
+        Decimal(str(weekly_hours)) * 
+        Decimal(str(lab_line.efficiency_factor))
+    )
+    
+    return weekly_capacity
+
+
+def calculate_lab_line_daily_capacity(lab_line, for_date) -> Decimal:
+    """
+    Calculate daily capacity for a Lab Line
+    
+    Args:
+        lab_line: LabLine instance
+        for_date: Date to calculate capacity for
+    
+    Returns:
+        Daily capacity in units
+    """
+    day_of_week = for_date.weekday()  # 0=Monday, 5=Saturday, 6=Sunday
+    
+    # Check if this day is a working day
+    is_working_day = True
+    if day_of_week == 5 and not lab_line.include_saturday:  # Saturday
+        is_working_day = False
+    elif day_of_week == 6 and not lab_line.include_sunday:  # Sunday
+        is_working_day = False
+    
+    if not is_working_day:
+        return Decimal('0')
+    
+    daily_hours = lab_line.shifts_per_day * lab_line.hours_per_shift
+    daily_capacity = (
+        Decimal(str(lab_line.base_capacity_per_hour)) * 
+        Decimal(str(daily_hours)) * 
+        Decimal(str(lab_line.efficiency_factor))
+    )
+    
+    return daily_capacity
+
+
+def get_lab_forecasts_demand_weekly(lab_line_ids: list, start_date, end_date) -> dict:
+    """
+    Get weekly demand from Lab Forecasts that target lab lines
+    Distributes annual demand using seasonality from reference product
+    
+    Args:
+        lab_line_ids: List of LabLine IDs
+        start_date: Simulation start date
+        end_date: Simulation end date
+    
+    Returns:
+        Dict mapping week_start_date -> total_demand
+    """
+    # Get lab forecasts for lab products on these lines
+    # LabForecast uses lab_product field, and LabProduct uses lab_default_line field
+    lab_forecasts = LabForecast.objects.filter(
+        lab_product__lab_default_line_id__in=lab_line_ids,
+        start_date__lte=end_date,
+        end_date__gte=start_date
+    ).select_related('lab_product', 'reference_product')
+    
+    weekly_demand = {}
+    weeks = get_weeks_in_range(start_date, end_date)
+    
+    for week_start in weeks:
+        weekly_demand[week_start] = Decimal('0')
+    
+    for lab_forecast in lab_forecasts:
+        # Get reference product for seasonality
+        reference_product = lab_forecast.reference_product
+        
+        if reference_product:
+            # Get seasonality pattern from real forecasts of reference product
+            ref_forecasts = DemandForecast.objects.filter(
+                product=reference_product
+            ).values('week_start_date').annotate(
+                total=Sum('forecast_quantity')
+            )
+            
+            # Calculate yearly total for reference product to get proportions
+            yearly_totals = {}
+            for rf in ref_forecasts:
+                year = rf['week_start_date'].year
+                if year not in yearly_totals:
+                    yearly_totals[year] = Decimal('0')
+                yearly_totals[year] += rf['total']
+            
+            # Get weekly proportions
+            weekly_proportions = {}
+            for rf in ref_forecasts:
+                week = rf['week_start_date']
+                year = week.year
+                if yearly_totals.get(year, Decimal('0')) > 0:
+                    weekly_proportions[(week.isocalendar()[1], year)] = (
+                        rf['total'] / yearly_totals[year]
+                    )
+            
+            # Distribute lab forecast's annual demand based on seasonality
+            for week_start in weeks:
+                if lab_forecast.start_date <= week_start <= lab_forecast.end_date:
+                    week_num = week_start.isocalendar()[1]
+                    year = week_start.year
+                    
+                    # Look for proportion from reference product
+                    proportion = weekly_proportions.get((week_num, year))
+                    
+                    if proportion is None:
+                        # Try previous year's same week
+                        for past_year in range(year - 1, year - 5, -1):
+                            proportion = weekly_proportions.get((week_num, past_year))
+                            if proportion is not None:
+                                break
+                    
+                    if proportion is None:
+                        # Default to equal distribution (52 weeks)
+                        proportion = Decimal('1') / Decimal('52')
+                    
+                    weekly_amount = Decimal(str(lab_forecast.annual_demand)) * proportion
+                    weekly_demand[week_start] += weekly_amount
+        else:
+            # No reference product - distribute evenly across weeks
+            forecast_weeks = get_weeks_in_range(
+                max(lab_forecast.start_date, start_date),
+                min(lab_forecast.end_date, end_date)
+            )
+            
+            if forecast_weeks:
+                weeks_count = len(forecast_weeks)
+                weekly_amount = Decimal(str(lab_forecast.annual_demand)) / Decimal('52')
+                
+                for week_start in forecast_weeks:
+                    if week_start in weekly_demand:
+                        weekly_demand[week_start] += weekly_amount
+    
+    return weekly_demand
+
+
+def run_lab_simulation(line_ids: list, lab_line_ids: list,
+                       start_date, end_date,
+                       include_lab_forecasts: bool = True,
+                       demand_modifications: list = None) -> dict:
+    """
+    Run Lab Simulation - combines real and lab (fictive) data
+    
+    Args:
+        line_ids: List of real ProductionLine IDs
+        lab_line_ids: List of LabLine IDs
+        start_date: Simulation start date
+        end_date: Simulation end date
+        include_lab_forecasts: Whether to include Lab Forecasts in demand
+        demand_modifications: Optional list of demand modifications (not yet implemented for lab)
+        include_lab_forecasts: Whether to include Lab Forecasts in demand
+    
+    Returns:
+        Simulation results with combined capacity and demand
+    """
+    weeks = get_weeks_in_range(start_date, end_date)
+    
+    # Calculate capacity from real lines (using default config)
+    real_capacity_by_week = {}
+    if line_ids:
+        real_capacity_by_week = calculate_capacity_per_week(line_ids, {}, weeks)
+    
+    # Calculate capacity from lab lines
+    lab_capacity_by_week = {}
+    lab_lines = LabLine.objects.filter(id__in=lab_line_ids)
+    for week_start in weeks:
+        lab_capacity_by_week[week_start] = Decimal('0')
+        for lab_line in lab_lines:
+            lab_capacity_by_week[week_start] += calculate_lab_line_weekly_capacity(lab_line)
+    
+    # Get real demand (all forecasts for products on selected real lines)
+    real_demand_by_week = {}
+    if line_ids:
+        real_demand_by_week = get_demand_for_lines(line_ids, start_date, end_date)
+    
+    # Get lab demand (from lab forecasts)
+    lab_demand_by_week = {}
+    if include_lab_forecasts and lab_line_ids:
+        lab_demand_by_week = get_lab_forecasts_demand_weekly(lab_line_ids, start_date, end_date)
+    
+    # Build data points
+    data_points = []
+    total_demand = Decimal('0')
+    total_capacity = Decimal('0')
+    utilizations = []
+    over_capacity_count = 0
+    
+    for week_start in weeks:
+        # Combine capacities
+        real_cap = real_capacity_by_week.get(week_start, Decimal('0'))
+        lab_cap = lab_capacity_by_week.get(week_start, Decimal('0'))
+        weekly_capacity = real_cap + lab_cap
+        
+        # Combine demands
+        real_dem = real_demand_by_week.get(week_start, Decimal('0'))
+        lab_dem = lab_demand_by_week.get(week_start, Decimal('0'))
+        demand = real_dem + lab_dem
+        
+        total_demand += demand
+        total_capacity += weekly_capacity
+        
+        if weekly_capacity > 0:
+            utilization = (demand / weekly_capacity) * 100
+        else:
+            utilization = Decimal('0')
+        
+        utilizations.append(float(utilization))
+        over_capacity = utilization > 100
+        if over_capacity:
+            over_capacity_count += 1
+        
+        data_points.append({
+            'date': f"W{week_start.isocalendar()[1]}/{week_start.year}",
+            'week_start': week_start,
+            'real_demand': real_dem,
+            'lab_demand': lab_dem,
+            'demand': demand,
+            'real_capacity': real_cap,
+            'lab_capacity': lab_cap,
+            'capacity': weekly_capacity,
+            'utilization_percent': round(utilization, 1),
+            'over_capacity': over_capacity
+        })
+    
+    # Calculate summary stats
+    avg_utilization = sum(utilizations) / len(utilizations) if utilizations else 0
+    peak_utilization = max(utilizations) if utilizations else 0
+    
+    return {
+        'granularity': 'week',
+        'average_utilization': round(avg_utilization, 1),
+        'peak_utilization': round(peak_utilization, 1),
+        'over_capacity_periods': over_capacity_count,
+        'total_capacity': total_capacity,
+        'total_demand': total_demand,
+        'data_points': data_points,
+        'real_lines_count': len(line_ids) if line_ids else 0,
+        'lab_lines_count': len(lab_line_ids) if lab_line_ids else 0,
+        'include_lab_forecasts': include_lab_forecasts
     }

@@ -18,6 +18,13 @@ router.register(r'line-assignments', views.LineProductAssignmentViewSet)
 router.register(r'forecasts', views.DemandForecastViewSet)
 router.register(r'line-overrides', views.LineConfigOverrideViewSet)
 
+# Lab API Router
+router.register(r'lab/categories', views.LabCategoryViewSet)
+router.register(r'lab/lines', views.LabLineViewSet)
+router.register(r'lab/clients', views.LabClientViewSet)
+router.register(r'lab/products', views.LabProductViewSet)
+router.register(r'lab/forecasts', views.LabForecastViewSet)
+
 urlpatterns = [
     # Template views (Dashboard pages)
     path('', views.dashboard_home, name='dashboard_home'),
@@ -26,6 +33,14 @@ urlpatterns = [
     path('lost-client/', views.lost_client_simulation_view, name='lost_client_simulation'),
     path('line-configuration/', views.line_configuration_view, name='line_configuration'),
     
+    # Lab template views
+    path('lab/line/', views.lab_line_view, name='lab_line'),
+    path('lab/client/', views.lab_client_view, name='lab_client'),
+    path('lab/product/', views.lab_product_view, name='lab_product'),
+    path('lab/category/', views.lab_category_view, name='lab_category'),
+    path('lab/forecast/', views.lab_forecast_view, name='lab_forecast'),
+    path('lab/simulation/', views.lab_simulation_view, name='lab_simulation'),
+    
     # API endpoints
     path('api/', include(router.urls)),
     
@@ -33,6 +48,7 @@ urlpatterns = [
     path('api/simulate/line/', views.simulate_line, name='api_simulate_line'),
     path('api/simulate/new-client/', views.simulate_new_client, name='api_simulate_new_client'),
     path('api/simulate/lost-client/', views.simulate_lost_client, name='api_simulate_lost_client'),
+    path('api/simulate/lab/', views.simulate_lab, name='api_simulate_lab'),
     
     # Line configuration API
     path('api/lines/<int:pk>/update-config/', views.update_line_config, name='api_update_line_config'),

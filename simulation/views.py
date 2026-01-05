@@ -10,7 +10,8 @@ from rest_framework.response import Response
 
 from .models import (
     Site, ProductCategory, ShiftConfiguration, ProductionLine,
-    Client, Product, LineProductAssignment, DemandForecast, LineConfigOverride
+    Client, Product, LineProductAssignment, DemandForecast, LineConfigOverride,
+    LabCategory, LabLine, LabClient, LabProduct, LabForecast
 )
 from .serializers import (
     SiteSerializer, ProductCategorySerializer, ShiftConfigurationSerializer,
@@ -18,11 +19,14 @@ from .serializers import (
     LineProductAssignmentSerializer, DemandForecastSerializer,
     LineSimulationRequestSerializer,
     NewClientSimulationRequestSerializer, LostClientSimulationRequestSerializer,
-    LineConfigOverrideSerializer
+    LineConfigOverrideSerializer,
+    LabCategorySerializer, LabLineSerializer, LabClientSerializer,
+    LabProductSerializer, LabForecastSerializer, LabSimulationRequestSerializer
 )
 from .services import (
     run_line_simulation,
-    run_new_client_simulation, run_lost_client_simulation
+    run_new_client_simulation, run_lost_client_simulation,
+    run_lab_simulation
 )
 
 
@@ -53,6 +57,40 @@ def lost_client_simulation_view(request):
 def line_configuration_view(request):
     """Line configuration page for manual adjustments"""
     return render(request, 'simulation/line_configuration.html')
+
+
+# =============================================================================
+# Lab Template Views
+# =============================================================================
+
+def lab_line_view(request):
+    """Lab Line management page"""
+    return render(request, 'simulation/lab_line.html')
+
+
+def lab_client_view(request):
+    """Lab Client management page"""
+    return render(request, 'simulation/lab_client.html')
+
+
+def lab_product_view(request):
+    """Lab Product management page"""
+    return render(request, 'simulation/lab_product.html')
+
+
+def lab_category_view(request):
+    """Lab Category management page"""
+    return render(request, 'simulation/lab_category.html')
+
+
+def lab_forecast_view(request):
+    """Lab Forecast management page"""
+    return render(request, 'simulation/lab_forecast.html')
+
+
+def lab_simulation_view(request):
+    """Lab Simulation page (combines real and lab data)"""
+    return render(request, 'simulation/lab_simulation.html')
 
 
 # =============================================================================
@@ -330,4 +368,82 @@ def update_line_config(request, pk):
     
     serializer = ProductionLineSerializer(line)
     return Response(serializer.data)
+
+
+# =============================================================================
+# Lab API ViewSets
+# =============================================================================
+
+class LabCategoryViewSet(viewsets.ModelViewSet):
+    queryset = LabCategory.objects.all()
+    serializer_class = LabCategorySerializer
+    search_fields = ['name', 'code']
+
+
+class LabLineViewSet(viewsets.ModelViewSet):
+    queryset = LabLine.objects.all()
+    serializer_class = LabLineSerializer
+    filterset_fields = ['site']
+    search_fields = ['name', 'code']
+
+
+class LabClientViewSet(viewsets.ModelViewSet):
+    queryset = LabClient.objects.all()
+    serializer_class = LabClientSerializer
+    search_fields = ['name', 'code']
+
+
+class LabProductViewSet(viewsets.ModelViewSet):
+    queryset = LabProduct.objects.all()
+    serializer_class = LabProductSerializer
+    filterset_fields = ['category', 'lab_category', 'default_line', 'lab_default_line']
+    search_fields = ['name', 'code']
+
+
+class LabForecastViewSet(viewsets.ModelViewSet):
+    queryset = LabForecast.objects.all()
+    serializer_class = LabForecastSerializer
+    filterset_fields = ['client', 'lab_client', 'product', 'lab_product']
+    
+    @action(detail=False, methods=['get'])
+    def by_date_range(self, request):
+        """Get lab forecasts within a date range"""
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        
+        queryset = self.queryset
+        
+        if start_date:
+            queryset = queryset.filter(start_date__lte=end_date, end_date__gte=start_date)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+
+# =============================================================================
+# Lab Simulation API Endpoint
+# =============================================================================
+
+@api_view(['POST'])
+def simulate_lab(request):
+    """
+    Lab Simulation API
+    Combines real data with lab (fictive) data for simulation
+    """
+    serializer = LabSimulationRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    data = serializer.validated_data
+    
+    result = run_lab_simulation(
+        line_ids=data.get('line_ids', []),
+        lab_line_ids=data.get('lab_line_ids', []),
+        start_date=data['start_date'],
+        end_date=data['end_date'],
+        include_lab_forecasts=data.get('include_lab_forecasts', True),
+        demand_modifications=data.get('demand_modifications')
+    )
+    
+    return Response(result)
 
