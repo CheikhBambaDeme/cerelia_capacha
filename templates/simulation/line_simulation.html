@@ -405,17 +405,17 @@
 
     // Initialize
     document.addEventListener('DOMContentLoaded', async function() {
-        // Set default dates (next 6 months)
+        // Set default dates (next 12 months)
         const today = new Date();
-        const sixMonthsLater = new Date(today);
-        sixMonthsLater.setMonth(sixMonthsLater.getMonth() + 6);
+        const twelveMonthsLater = new Date(today);
+        twelveMonthsLater.setMonth(twelveMonthsLater.getMonth() + 12);
         
         document.getElementById('startDate').value = today.toISOString().split('T')[0];
-        document.getElementById('endDate').value = sixMonthsLater.toISOString().split('T')[0];
+        document.getElementById('endDate').value = twelveMonthsLater.toISOString().split('T')[0];
         
         // Set default modification dates
         document.getElementById('modStartDate').value = today.toISOString().split('T')[0];
-        document.getElementById('modEndDate').value = sixMonthsLater.toISOString().split('T')[0];
+        document.getElementById('modEndDate').value = twelveMonthsLater.toISOString().split('T')[0];
 
         // Load data
         await Promise.all([
