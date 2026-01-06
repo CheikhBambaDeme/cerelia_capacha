@@ -2,6 +2,20 @@
 
 {% block title %}Line Simulation - Cerelia{% endblock %}
 
+{% block extra_css %}
+<style>
+    .scenario-card {
+        transition: all 0.3s ease;
+    }
+    .scenario-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .scenario-card .card-body {
+        background-color: #f8f9fa;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-bar-chart-line"></i> Line Simulation</h2>
@@ -41,9 +55,21 @@
 
                 <!-- Shift Configuration per Line -->
                 <div class="mb-3">
-                    <label class="form-label" style="color: #5e3e2f; font-weight: bold;">Shift Configurations</label>
-                    <div id="shiftConfigContainer">
-                        <small class="text-muted">Select lines first</small>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0" style="color: #5e3e2f; font-weight: bold;">Shift Configurations</label>
+                        <button class="btn btn-sm btn-outline-primary" onclick="addScenario()" title="Add another shift configuration scenario">
+                            <i class="bi bi-plus-circle"></i> Add Scenario
+                        </button>
+                    </div>
+                    <div id="scenariosContainer">
+                        <div class="scenario-card mb-3" data-scenario-id="0">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="badge bg-primary">Scenario 1</span>
+                            </div>
+                            <div class="shift-config-container" data-scenario-id="0">
+                                <small class="text-muted">Select lines first</small>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -386,6 +412,9 @@
     let allLines = [];
     let overlayClients = [];  // Store client codes for overlay
     let lastSimulationResult = null;  // Store for export
+    let scenarios = []; // Store multiple scenarios
+    let nextScenarioId = 1; // Counter for scenario IDs
+    let scenarioResults = {}; // Store results for each scenario
     let lastClientOverlays = {};  // Store for export
     let demandModifications = [];  // Store demand modifications
     let allProducts = [];  // Store all products for modification dropdown
@@ -533,27 +562,94 @@
     }
 
     function updateShiftConfigUI() {
-        const container = document.getElementById('shiftConfigContainer');
         const selectedOptions = Array.from(document.getElementById('lineSelect').selectedOptions);
         
         if (selectedOptions.length === 0) {
-            container.innerHTML = '<small class="text-muted">Select lines first</small>';
+            // Update all scenario containers
+            document.querySelectorAll('.shift-config-container').forEach(container => {
+                container.innerHTML = '<small class="text-muted">Select lines first</small>';
+            });
             return;
         }
 
-        container.innerHTML = selectedOptions.map(opt => {
-            const line = allLines.find(l => l.id == opt.value);
-            const hasOverrides = line && line.active_overrides_count > 0;
-            return `
-                <div class="mb-2">
-                    <label class="form-label small">${line ? line.name : 'Line'} ${hasOverrides ? '<span class="badge bg-warning text-dark"><i class="bi bi-wrench"></i> Has Overrides</span>' : ''}</label>
-                    <select class="form-select form-select-sm" data-line-id="${opt.value}">
-                        <option value="override" ${hasOverrides ? 'selected' : ''}>🔧 Use Override Config (date-based)</option>
-                        ${shiftConfigs.map(sc => `<option value="${sc.id}" ${!hasOverrides && line && line.default_shift_config == sc.id ? 'selected' : ''}>${sc.name}</option>`).join('')}
-                    </select>
+        // Update each scenario's shift config UI
+        document.querySelectorAll('.shift-config-container').forEach(container => {
+            const scenarioId = container.dataset.scenarioId;
+            container.innerHTML = selectedOptions.map(opt => {
+                const line = allLines.find(l => l.id == opt.value);
+                const hasOverrides = line && line.active_overrides_count > 0;
+                return `
+                    <div class="mb-2">
+                        <label class="form-label small">${line ? line.name : 'Line'} ${hasOverrides ? '<span class="badge bg-warning text-dark"><i class="bi bi-wrench"></i> Has Overrides</span>' : ''}</label>
+                        <select class="form-select form-select-sm" data-line-id="${opt.value}" data-scenario-id="${scenarioId}">
+                            <option value="override" ${hasOverrides ? 'selected' : ''}>🔧 Use Override Config (date-based)</option>
+                            ${shiftConfigs.map(sc => `<option value="${sc.id}" ${!hasOverrides && line && line.default_shift_config == sc.id ? 'selected' : ''}>${sc.name}</option>`).join('')}
+                        </select>
+                    </div>
+                `;
+            }).join('');
+        });
+    }
+
+    function addScenario() {
+        const scenarioId = nextScenarioId++;
+        const scenarioNum = document.querySelectorAll('.scenario-card').length + 1;
+        const scenariosContainer = document.getElementById('scenariosContainer');
+        
+        // Scenario colors for visual distinction
+        const colors = ['primary', 'success', 'info', 'warning', 'danger', 'secondary'];
+        const colorClass = colors[scenarioNum % colors.length];
+        
+        const scenarioHtml = `
+            <div class="scenario-card mb-3 card" data-scenario-id="${scenarioId}" style="border-left: 4px solid var(--bs-${colorClass});">
+                <div class="card-body p-2">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge bg-${colorClass}">Scenario ${scenarioNum}</span>
+                        <button class="btn btn-sm btn-outline-danger" onclick="removeScenario(${scenarioId})" title="Remove this scenario">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                    <div class="shift-config-container" data-scenario-id="${scenarioId}">
+                        <small class="text-muted">Select lines first</small>
+                    </div>
                 </div>
-            `;
-        }).join('');
+            </div>
+        `;
+        
+        scenariosContainer.insertAdjacentHTML('beforeend', scenarioHtml);
+        
+        // Update the shift config UI for the new scenario
+        updateShiftConfigUI();
+    }
+
+    function removeScenario(scenarioId) {
+        // Don't allow removing the last scenario
+        const allScenarios = document.querySelectorAll('.scenario-card');
+        if (allScenarios.length <= 1) {
+            alert('You must have at least one scenario');
+            return;
+        }
+        
+        const scenarioCard = document.querySelector(`[data-scenario-id="${scenarioId}"].scenario-card`);
+        if (scenarioCard) {
+            scenarioCard.remove();
+            // Remove from results if exists
+            delete scenarioResults[scenarioId];
+            // Re-render chart without this scenario
+            if (lastSimulationResult) {
+                updateChartWithScenarios();
+            }
+        }
+        
+        // Renumber remaining scenarios
+        const remainingScenarios = document.querySelectorAll('.scenario-card');
+        remainingScenarios.forEach((card, index) => {
+            const badge = card.querySelector('.badge');
+            if (badge) {
+                const oldText = badge.textContent;
+                badge.textContent = `Scenario ${index + 1}`;
+            }
+        });
     }
 
     async function runSimulation() {
@@ -565,48 +661,68 @@
             return;
         }
 
-        // Get shift configs for each line
-        const shiftConfigSelects = document.querySelectorAll('#shiftConfigContainer select');
-        const lineShiftConfigs = Array.from(shiftConfigSelects).map(select => ({
-            line_id: parseInt(select.dataset.lineId),
-            shift_config_id: select.value === 'override' ? null : parseInt(select.value),
-            use_override: select.value === 'override'
-        }));
-
+        // Clear previous scenario results
+        scenarioResults = {};
+        
+        // Get all scenarios
+        const scenarioCards = document.querySelectorAll('.scenario-card');
+        
         // Get client codes (multi, comma-separated)
         const clientCodesRaw = document.getElementById('clientFilter').value.trim();
         const clientCodes = clientCodesRaw ? clientCodesRaw.split(',').map(c => c.trim()).filter(Boolean) : [];
         // Get product code
         const productCode = document.getElementById('productFilter').value.trim();
-
-        const requestData = {
-            line_ids: selectedLineIds,
-            shift_configs: lineShiftConfigs,
-            start_date: document.getElementById('startDate').value,
-            end_date: document.getElementById('endDate').value,
-            client_codes: clientCodes.length > 0 ? clientCodes : null,
-            category_id: document.getElementById('categoryFilter').value || null,
-            product_code: productCode || null,
-            overlay_client_codes: overlayClients.map(c => c.code),
-            granularity: 'week',
-            demand_modifications: demandModifications.length > 0 ? demandModifications : null
-        };
+        
+        // Run simulation for each scenario
         try {
-            const response = await fetch('/api/simulate/line/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': csrftoken
-                },
-                body: JSON.stringify(requestData)
-            });
-        
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+            for (const scenarioCard of scenarioCards) {
+                const scenarioId = scenarioCard.dataset.scenarioId;
+                
+                // Get shift configs for this scenario
+                const shiftConfigSelects = scenarioCard.querySelectorAll('.shift-config-container select');
+                const lineShiftConfigs = Array.from(shiftConfigSelects).map(select => ({
+                    line_id: parseInt(select.dataset.lineId),
+                    shift_config_id: select.value === 'override' ? null : parseInt(select.value),
+                    use_override: select.value === 'override'
+                }));
+
+                const requestData = {
+                    line_ids: selectedLineIds,
+                    shift_configs: lineShiftConfigs,
+                    start_date: document.getElementById('startDate').value,
+                    end_date: document.getElementById('endDate').value,
+                    client_codes: clientCodes.length > 0 ? clientCodes : null,
+                    category_id: document.getElementById('categoryFilter').value || null,
+                    product_code: productCode || null,
+                    overlay_client_codes: overlayClients.map(c => c.code),
+                    granularity: 'week',
+                    demand_modifications: demandModifications.length > 0 ? demandModifications : null
+                };
+                
+                const response = await fetch('/api/simulate/line/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken
+                    },
+                    body: JSON.stringify(requestData)
+                });
+            
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+            
+                const result = await response.json();
+                scenarioResults[scenarioId] = result;
             }
-        
-            const result = await response.json();
-            displayResults(result);
+            
+            // Store the first scenario as the main result for table display
+            const firstScenarioId = scenarioCards[0].dataset.scenarioId;
+            lastSimulationResult = scenarioResults[firstScenarioId];
+            
+            // Display results with all scenarios
+            displayResultsWithScenarios();
+            
         } catch (error) {
             console.error('Simulation error:', error);
             alert('Error running simulation: ' + error.message);
@@ -679,6 +795,39 @@
         `).join('');
     }
 
+    function displayResultsWithScenarios() {
+        // Use the first scenario for stats and table display
+        const firstScenarioId = Object.keys(scenarioResults)[0];
+        const firstResult = scenarioResults[firstScenarioId];
+        
+        if (!firstResult) return;
+        
+        // Store for export
+        lastSimulationResult = firstResult;
+        const clientOverlays = firstResult.client_overlays || {};
+        lastClientOverlays = clientOverlays;
+        
+        // Show export buttons
+        document.getElementById('exportButtons').style.display = 'inline-flex';
+
+        // Update stats (using first scenario)
+        document.getElementById('avgUtilization').textContent = firstResult.average_utilization + '%';
+        document.getElementById('peakUtilization').textContent = firstResult.peak_utilization + '%';
+        document.getElementById('overCapacityPeriods').textContent = firstResult.over_capacity_periods;
+        document.getElementById('totalCapacity').textContent = formatNumber(firstResult.total_capacity);
+
+        // Update available weeks for stock adjustment
+        const dataPoints = Array.isArray(firstResult.data_points) ? firstResult.data_points : [];
+        availableWeeks = dataPoints.map(dp => dp.date);
+        updateStockWeekSelect();
+
+        // Update chart with all scenarios
+        updateChartWithScenarios();
+
+        // Update table (using first scenario)
+        updateTable(dataPoints, clientOverlays);
+    }
+
     function displayResults(result) {
         // Store results for export
         // Defensive: ensure arrays/objects
@@ -715,6 +864,245 @@
             const line = allLines.find(l => l.id === id);
             return line ? `${line.site_code}-${line.code}` : '';
         }).filter(s => s);
+    }
+
+    function updateChartWithScenarios() {
+        const ctx = document.getElementById('simulationChart').getContext('2d');
+        
+        if (simulationChart) {
+            simulationChart.destroy();
+        }
+        
+        // Get selected line names for chart subtitle
+        const selectedLineNames = getSelectedLineNames();
+        const linesSubtitle = selectedLineNames.length > 0 
+            ? selectedLineNames.join(' + ') 
+            : 'No lines selected';
+
+        // Use first scenario for base data (demand, labels, etc.)
+        const firstScenarioId = Object.keys(scenarioResults)[0];
+        const firstResult = scenarioResults[firstScenarioId];
+        const dataPoints = Array.isArray(firstResult.data_points) ? firstResult.data_points : [];
+        const clientOverlays = firstResult.client_overlays || {};
+
+        // Use date_display if available (daily view), otherwise use date (weekly view)
+        const labels = dataPoints.map(dp => dp.date_display || dp.date);
+        const demandData = dataPoints.map(dp => parseFloat(dp.demand));
+        
+        // Build datasets array
+        const datasets = [
+            {
+                label: 'Total Demand',
+                data: demandData,
+                borderColor: chartColors.accent,
+                backgroundColor: chartColors.accentLight,
+                fill: false,
+                tension: 0.3,
+                order: 2
+            }
+        ];
+        
+        // Add capacity line for each scenario
+        const scenarioColorsBorder = [
+            '#5e3e2f', // brown (primary)
+            '#28a745', // green
+            '#17a2b8', // cyan
+            '#ffc107', // yellow
+            '#dc3545', // red
+            '#6c757d'  // gray
+        ];
+        
+        const scenarioColorsBackground = [
+            'rgba(94, 62, 47, 0.1)',   // brown transparent
+            'rgba(40, 167, 69, 0.1)',  // green transparent
+            'rgba(23, 162, 184, 0.1)', // cyan transparent
+            'rgba(255, 193, 7, 0.1)',  // yellow transparent
+            'rgba(220, 53, 69, 0.1)',  // red transparent
+            'rgba(108, 117, 125, 0.1)' // gray transparent
+        ];
+        
+        const scenarioCards = document.querySelectorAll('.scenario-card');
+        scenarioCards.forEach((card, index) => {
+            const scenarioId = card.dataset.scenarioId;
+            const result = scenarioResults[scenarioId];
+            
+            if (!result) return;
+            
+            const scenarioNum = index + 1;
+            const scenarioDataPoints = Array.isArray(result.data_points) ? result.data_points : [];
+            const capacityData = scenarioDataPoints.map(dp => parseFloat(dp.capacity));
+            
+            // Point colors for capacity - highlight overrides and weekends
+            const capacityPointColors = scenarioDataPoints.map(dp => {
+                if (dp.has_override) return '#ffc107';
+                if (dp.is_weekend) return '#6c757d';
+                return scenarioColorsBorder[index % scenarioColorsBorder.length];
+            });
+            const capacityPointRadius = scenarioDataPoints.map(dp => 
+                dp.has_override ? 6 : 3
+            );
+            
+            datasets.push({
+                label: `Capacity - Scenario ${scenarioNum}`,
+                data: capacityData,
+                borderColor: scenarioColorsBorder[index % scenarioColorsBorder.length],
+                backgroundColor: scenarioColorsBackground[index % scenarioColorsBackground.length],
+                borderDash: index === 0 ? [5, 5] : [2, 2],
+                fill: true, // Fill all scenarios with transparent background
+                tension: 0,
+                pointBackgroundColor: capacityPointColors,
+                pointBorderColor: capacityPointColors,
+                pointRadius: capacityPointRadius,
+                pointHoverRadius: 8,
+                borderWidth: index === 0 ? 2.5 : 2,
+                order: 1 + index * 0.1
+            });
+        });
+        
+        // Add adjusted demand curve if stock adjustments or super chill adjustments exist
+        const adjustedDemand = calculateAdjustedDemand(dataPoints);
+        if (adjustedDemand) {
+            // Determine label based on what adjustments are active
+            let adjustedLabel = 'Adjusted Demand';
+            const hasStock = stockAdjustments.length > 0;
+            const hasSuperChill = superChillAdjustments.length > 0;
+            const hasFrozen = frozenAdjustments.length > 0;
+            
+            const parts = [];
+            if (hasStock) parts.push('Stock');
+            if (hasSuperChill) parts.push('Super Chill');
+            if (hasFrozen) parts.push('Frozen');
+            
+            if (parts.length === 1) {
+                adjustedLabel = `Demand with ${parts[0]}`;
+            } else if (parts.length > 1) {
+                adjustedLabel = `Demand (${parts.join(' + ')})`;
+            }
+            
+            datasets.push({
+                label: adjustedLabel,
+                data: adjustedDemand,
+                borderColor: '#17a2b8',
+                backgroundColor: '#17a2b840',
+                fill: false,
+                tension: 0.3,
+                borderWidth: 3,
+                borderDash: [10, 5],
+                pointRadius: 5,
+                pointStyle: 'rectRot',
+                order: 0
+            });
+        }
+        
+        // Check if we should combine overlays
+        const combineOverlays = document.getElementById('combineOverlays').checked;
+        
+        if (combineOverlays && Object.keys(clientOverlays).length > 0) {
+            // Create combined overlay
+            const combinedDemandData = dataPoints.map(dp => {
+                let sum = 0;
+                Object.entries(clientOverlays).forEach(([clientCode, overlayData]) => {
+                    const overlayPoint = overlayData.data_points.find(op => op.date === dp.date);
+                    sum += overlayPoint ? parseFloat(overlayPoint.demand) : 0;
+                });
+                return sum;
+            });
+            
+            const clientCodes = Object.keys(clientOverlays).join(' + ');
+            
+            datasets.push({
+                label: `Combined (${clientCodes})`,
+                data: combinedDemandData,
+                borderColor: '#9b59b6',
+                backgroundColor: '#9b59b640',
+                fill: false,
+                tension: 0.3,
+                borderWidth: 3,
+                pointRadius: 5,
+                order: 3
+            });
+        } else {
+            // Add overlay datasets for each client separately
+            Object.entries(clientOverlays).forEach(([clientCode, overlayData], index) => {
+                const overlayClient = overlayClients.find(c => c.code === clientCode);
+                const color = overlayClient ? overlayClient.color : overlayColors[index % overlayColors.length];
+                
+                const overlayDemandData = dataPoints.map(dp => {
+                    const overlayPoint = overlayData.data_points.find(op => op.date === dp.date);
+                    return overlayPoint ? parseFloat(overlayPoint.demand) : 0;
+                });
+                
+                datasets.push({
+                    label: `${clientCode} (${overlayData.client_name})`,
+                    data: overlayDemandData,
+                    borderColor: color,
+                    backgroundColor: color + '40',
+                    fill: false,
+                    tension: 0.3,
+                    borderWidth: 2,
+                    pointRadius: 4,
+                    order: 3 + index
+                });
+            });
+        }
+
+        simulationChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: `Lines: ${linesSubtitle}`,
+                        font: {
+                            size: 14,
+                            weight: 'normal'
+                        },
+                        color: '#6c757d',
+                        padding: {
+                            bottom: 10
+                        }
+                    },
+                    legend: {
+                        position: 'top',
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            afterBody: function(context) {
+                                const dataIndex = context[0].dataIndex;
+                                const dp = dataPoints[dataIndex];
+                                if (dp.has_override) {
+                                    return ['⚠️ Config override active for this week'];
+                                }
+                                return [];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Units'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Date'
+                        }
+                    }
+                }
+            }
+        });
     }
 
     function updateChart(dataPoints, clientOverlays) {
