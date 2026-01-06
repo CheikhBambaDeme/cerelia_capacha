@@ -100,6 +100,10 @@ class ProductionLine(models.Model):
     class Meta:
         ordering = ['site__name', 'name']
         unique_together = ['site', 'code']
+        indexes = [
+            models.Index(fields=['is_active']),
+            models.Index(fields=['site', 'is_active']),
+        ]
 
     def __str__(self):
         return f"{self.site.code} - {self.name}"
@@ -245,6 +249,8 @@ class LineConfigOverride(models.Model):
         ordering = ['line', 'start_date']
         indexes = [
             models.Index(fields=['line', 'start_date', 'end_date']),
+            models.Index(fields=['is_active']),
+            models.Index(fields=['line', 'is_active']),
         ]
     
     def __str__(self):
@@ -282,6 +288,10 @@ class Client(models.Model):
 
     class Meta:
         ordering = ['name']
+        indexes = [
+            models.Index(fields=['is_active']),
+            models.Index(fields=['code']),
+        ]
 
     def __str__(self):
         return self.name
@@ -321,6 +331,12 @@ class Product(models.Model):
 
     class Meta:
         ordering = ['category__name', 'code']
+        indexes = [
+            models.Index(fields=['is_active']),
+            models.Index(fields=['category', 'is_active']),
+            models.Index(fields=['default_line']),
+            models.Index(fields=['code']),
+        ]
 
     def __str__(self):
         return f"{self.code} - {self.name}"
@@ -355,6 +371,10 @@ class LineProductAssignment(models.Model):
     class Meta:
         unique_together = ['line', 'product']
         ordering = ['line__site__name', 'line__name', 'product__code']
+        indexes = [
+            models.Index(fields=['line', 'is_default']),
+            models.Index(fields=['product', 'is_default']),
+        ]
 
     def __str__(self):
         default_marker = " (default)" if self.is_default else ""

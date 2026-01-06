@@ -26,7 +26,7 @@ from .serializers import (
 from .services import (
     run_line_simulation,
     run_new_client_simulation, run_lost_client_simulation,
-    run_lab_simulation
+    run_lab_simulation, clear_caches
 )
 
 
@@ -105,7 +105,9 @@ class ShiftConfigurationViewSet(viewsets.ModelViewSet):
 
 
 class ProductionLineViewSet(viewsets.ModelViewSet):
-    queryset = ProductionLine.objects.filter(is_active=True)
+    queryset = ProductionLine.objects.filter(is_active=True).select_related(
+        'site', 'default_shift_config'
+    ).prefetch_related('config_overrides')
     serializer_class = ProductionLineSerializer
     filterset_fields = ['site', 'is_active']
     search_fields = ['name', 'code']
@@ -130,7 +132,7 @@ class ClientViewSet(viewsets.ModelViewSet):
 
 
 class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.filter(is_active=True)
+    queryset = Product.objects.filter(is_active=True).select_related('category', 'default_line')
     serializer_class = ProductSerializer
     filterset_fields = ['category', 'is_active']
     search_fields = ['code', 'name']
@@ -148,13 +150,13 @@ class ProductViewSet(viewsets.ModelViewSet):
 
 
 class LineProductAssignmentViewSet(viewsets.ModelViewSet):
-    queryset = LineProductAssignment.objects.all()
+    queryset = LineProductAssignment.objects.select_related('line', 'product', 'product__category')
     serializer_class = LineProductAssignmentSerializer
     filterset_fields = ['line', 'product', 'is_default']
 
 
 class DemandForecastViewSet(viewsets.ModelViewSet):
-    queryset = DemandForecast.objects.all()
+    queryset = DemandForecast.objects.select_related('client', 'product', 'product__category')
     serializer_class = DemandForecastSerializer
     filterset_fields = ['client', 'product', 'year', 'week_number']
     
@@ -200,7 +202,7 @@ class DemandForecastViewSet(viewsets.ModelViewSet):
 
 class LineConfigOverrideViewSet(viewsets.ModelViewSet):
     """ViewSet for managing line configuration overrides"""
-    queryset = LineConfigOverride.objects.all()
+    queryset = LineConfigOverride.objects.select_related('line', 'line__site')
     serializer_class = LineConfigOverrideSerializer
     filterset_fields = ['line', 'is_active']
     
@@ -251,6 +253,9 @@ def simulate_line(request):
     Line Simulation API (Dashboard 1)
     Analyze demand vs capacity for selected production lines
     """
+    # Clear caches at the start of each request for fresh data
+    clear_caches()
+    
     serializer = LineSimulationRequestSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -279,6 +284,9 @@ def simulate_new_client(request):
     New Client Simulation API (Dashboard 3)
     Analyze impact of adding a new client
     """
+    # Clear caches at the start of each request for fresh data
+    clear_caches()
+    
     serializer = NewClientSimulationRequestSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -303,6 +311,9 @@ def simulate_lost_client(request):
     Lost Client Simulation API (Dashboard 4)
     Analyze impact of losing a client
     """
+    # Clear caches at the start of each request for fresh data
+    clear_caches()
+    
     serializer = LostClientSimulationRequestSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -391,7 +402,9 @@ class LabProductViewSet(viewsets.ModelViewSet):
 
 
 class LabForecastViewSet(viewsets.ModelViewSet):
-    queryset = LabForecast.objects.all()
+    queryset = LabForecast.objects.select_related(
+        'client', 'lab_client', 'product', 'product__category', 'lab_product', 'lab_product__category'
+    )
     serializer_class = LabForecastSerializer
     filterset_fields = ['client', 'lab_client', 'product', 'lab_product']
     
@@ -420,6 +433,9 @@ def simulate_lab(request):
     Lab Simulation API
     Combines real data with lab (fictive) data for simulation
     """
+    # Clear caches at the start of each request for fresh data
+    clear_caches()
+    
     serializer = LabSimulationRequestSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

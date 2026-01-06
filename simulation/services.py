@@ -5,13 +5,29 @@ Core business logic for capacity and demand simulations
 
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Optional
-from django.db.models import Sum, Q
+from typing import Optional, Dict, List, Set
+from django.db.models import Sum, Q, Prefetch
+from functools import lru_cache
 from .models import (
     ProductionLine, ShiftConfiguration, Product, Client,
     ProductCategory, DemandForecast, LineProductAssignment,
-    LabLine, LabForecast, LabProduct
+    LabLine, LabForecast, LabProduct, LineConfigOverride,
+    LabClient, LabCategory
 )
+
+
+# Cache for frequently accessed data within a request
+_line_cache = {}
+_shift_config_cache = {}
+_product_ids_cache = {}
+
+
+def clear_caches():
+    """Clear all service caches - call at the start of each request"""
+    global _line_cache, _shift_config_cache, _product_ids_cache
+    _line_cache = {}
+    _shift_config_cache = {}
+    _product_ids_cache = {}
 
 
 def get_week_start(date):
@@ -39,7 +55,119 @@ def get_days_in_range(start_date, end_date):
     return days
 
 
-def calculate_daily_capacity(line_ids: list, shift_configs: dict, for_date) -> Decimal:
+def _get_lines_with_configs(line_ids: list, start_date=None, end_date=None) -> dict:
+    """
+    Batch load production lines with their configurations and overrides.
+    Returns a dict mapping line_id -> line object with prefetched data.
+    """
+    cache_key = (tuple(sorted(line_ids)), start_date, end_date)
+    if cache_key in _line_cache:
+        return _line_cache[cache_key]
+    
+    # Build override filter if date range provided
+    override_filter = Q(is_active=True)
+    if start_date and end_date:
+        override_filter &= Q(end_date__gte=start_date) & Q(start_date__lte=end_date)
+    
+    lines = ProductionLine.objects.filter(
+        id__in=line_ids, 
+        is_active=True
+    ).select_related(
+        'site',
+        'default_shift_config'
+    ).prefetch_related(
+        Prefetch(
+            'config_overrides',
+            queryset=LineConfigOverride.objects.filter(override_filter).order_by('start_date'),
+            to_attr='prefetched_overrides'
+        )
+    )
+    
+    result = {line.id: line for line in lines}
+    _line_cache[cache_key] = result
+    return result
+
+
+def _get_shift_config(shift_config_id: int) -> Optional[ShiftConfiguration]:
+    """Get shift config from cache or database"""
+    if shift_config_id in _shift_config_cache:
+        return _shift_config_cache[shift_config_id]
+    
+    try:
+        config = ShiftConfiguration.objects.get(id=shift_config_id)
+        _shift_config_cache[shift_config_id] = config
+        return config
+    except ShiftConfiguration.DoesNotExist:
+        return None
+
+
+def _get_config_for_date_from_prefetched(line, target_date, prefetched_overrides):
+    """
+    Get configuration for a date using prefetched overrides.
+    Optimized version that doesn't hit the database.
+    """
+    from datetime import timedelta
+    
+    for override in prefetched_overrides:
+        if override.start_date <= target_date <= override.end_date:
+            # If it's a recurrent override, check if target_date falls on a valid recurrence week
+            if override.is_recurrent and override.recurrence_weeks:
+                days_since_start = (target_date - override.start_date).days
+                weeks_since_start = days_since_start // 7
+                if weeks_since_start % override.recurrence_weeks != 0:
+                    continue
+            
+            return {
+                'type': 'override',
+                'override': override,
+                'shifts_per_day': override.shifts_per_day,
+                'hours_per_shift': float(override.hours_per_shift),
+                'include_saturday': override.include_saturday,
+                'include_sunday': override.include_sunday,
+                'weekly_hours': override.weekly_hours,
+                'reason': override.reason
+            }
+    
+    # No valid override found, use default
+    if line.default_shift_config:
+        return {
+            'type': 'default',
+            'override': None,
+            'shifts_per_day': line.default_shift_config.shifts_per_day,
+            'hours_per_shift': float(line.default_shift_config.hours_per_shift),
+            'include_saturday': line.default_shift_config.includes_saturday,
+            'include_sunday': line.default_shift_config.includes_sunday,
+            'weekly_hours': line.default_shift_config.weekly_hours,
+            'reason': None
+        }
+    return None
+
+
+def _get_product_ids_for_lines(line_ids: list) -> Set[int]:
+    """
+    Get all product IDs that can be produced on the given lines.
+    Uses caching to avoid repeated queries.
+    """
+    cache_key = tuple(sorted(line_ids))
+    if cache_key in _product_ids_cache:
+        return _product_ids_cache[cache_key]
+    
+    # Single query to get both assignments and default products
+    assignments = set(LineProductAssignment.objects.filter(
+        line_id__in=line_ids
+    ).values_list('product_id', flat=True))
+    
+    default_products = set(Product.objects.filter(
+        default_line_id__in=line_ids
+    ).values_list('id', flat=True))
+    
+    result = assignments | default_products
+    _product_ids_cache[cache_key] = result
+    return result
+
+
+def calculate_daily_capacity(line_ids: list, shift_configs: dict, for_date, 
+                             lines_dict: dict = None) -> Decimal:
     """
     Calculate total daily capacity for given lines with their shift configurations
     
@@ -47,6 +175,7 @@ def calculate_daily_capacity(line_ids: list, shift_configs: dict, for_date) -> D
         line_ids: List of production line IDs
         shift_configs: Dict mapping line_id -> shift_config_id (manual override from UI)
         for_date: Date to calculate capacity for
+        lines_dict: Optional pre-loaded lines dictionary for batch processing
     
     Returns:
         Total daily capacity in units
@@ -54,21 +183,29 @@ def calculate_daily_capacity(line_ids: list, shift_configs: dict, for_date) -> D
     total_capacity = Decimal('0')
     day_of_week = for_date.weekday()  # 0=Monday, 5=Saturday, 6=Sunday
     
-    lines = ProductionLine.objects.filter(id__in=line_ids, is_active=True)
+    # Use provided lines_dict or fetch if not provided
+    if lines_dict is None:
+        lines_dict = _get_lines_with_configs(line_ids, for_date, for_date)
     
-    for line in lines:
-        shift_config_id = shift_configs.get(line.id)
+    for line_id in line_ids:
+        line = lines_dict.get(line_id)
+        if not line:
+            continue
+            
+        shift_config_id = shift_configs.get(line_id)
         
         # Get the configuration to use
         if shift_config_id:
-            try:
-                config = ShiftConfiguration.objects.get(id=shift_config_id)
+            config = _get_shift_config(shift_config_id)
+            if config:
                 shifts_per_day = config.shifts_per_day
                 hours_per_shift = config.hours_per_shift
                 includes_saturday = config.includes_saturday
                 includes_sunday = config.includes_sunday
-            except ShiftConfiguration.DoesNotExist:
-                config_data = line.get_config_for_date(for_date)
+            else:
+                config_data = _get_config_for_date_from_prefetched(
+                    line, for_date, getattr(line, 'prefetched_overrides', [])
+                )
                 if config_data:
                     shifts_per_day = config_data['shifts_per_day']
                     hours_per_shift = config_data['hours_per_shift']
@@ -77,7 +214,9 @@ def calculate_daily_capacity(line_ids: list, shift_configs: dict, for_date) -> D
                 else:
                     continue
         else:
-            config_data = line.get_config_for_date(for_date)
+            config_data = _get_config_for_date_from_prefetched(
+                line, for_date, getattr(line, 'prefetched_overrides', [])
+            )
             if config_data:
                 shifts_per_day = config_data['shifts_per_day']
                 hours_per_shift = config_data['hours_per_shift']
@@ -103,12 +242,21 @@ def calculate_daily_capacity(line_ids: list, shift_configs: dict, for_date) -> D
 
 def calculate_capacity_per_day(line_ids: list, shift_configs: dict, days: list) -> dict:
     """
-    Calculate capacity for each day, considering LineConfigOverrides
+    Calculate capacity for each day, considering LineConfigOverrides.
+    Optimized: Pre-loads all lines with configs once.
     """
     capacity_by_day = {}
     
+    if not days:
+        return capacity_by_day
+    
+    # Pre-load all lines with configs for the entire date range
+    start_date = min(days)
+    end_date = max(days)
+    lines_dict = _get_lines_with_configs(line_ids, start_date, end_date)
+    
     for day in days:
-        capacity = calculate_daily_capacity(line_ids, shift_configs, for_date=day)
+        capacity = calculate_daily_capacity(line_ids, shift_configs, for_date=day, lines_dict=lines_dict)
         capacity_by_day[day] = capacity
     
     return capacity_by_day
@@ -154,7 +302,8 @@ def get_client_demand_daily(client_id: int, line_ids: list, start_date, end_date
     return daily_demand
 
 
-def calculate_weekly_capacity(line_ids: list, shift_configs: dict, for_date=None) -> Decimal:
+def calculate_weekly_capacity(line_ids: list, shift_configs: dict, for_date=None,
+                               lines_dict: dict = None) -> Decimal:
     """
     Calculate total weekly capacity for given lines with their shift configurations
     
@@ -162,24 +311,31 @@ def calculate_weekly_capacity(line_ids: list, shift_configs: dict, for_date=None
         line_ids: List of production line IDs
         shift_configs: Dict mapping line_id -> shift_config_id (manual override from UI)
         for_date: Optional date to check for LineConfigOverride entries
+        lines_dict: Optional pre-loaded lines dictionary for batch processing
     
     Returns:
         Total weekly capacity in units
     """
     total_capacity = Decimal('0')
     
-    lines = ProductionLine.objects.filter(id__in=line_ids, is_active=True)
+    # Use provided lines_dict or fetch if not provided
+    if lines_dict is None:
+        lines_dict = _get_lines_with_configs(line_ids, for_date, for_date)
     
-    for line in lines:
+    for line_id in line_ids:
+        line = lines_dict.get(line_id)
+        if not line:
+            continue
+        
         # First check if there's a UI-selected shift config override
-        shift_config_id = shift_configs.get(line.id)
+        shift_config_id = shift_configs.get(line_id)
         
         if shift_config_id:
             # User explicitly selected a shift config in the simulation UI
-            try:
-                shift_config = ShiftConfiguration.objects.get(id=shift_config_id)
+            shift_config = _get_shift_config(shift_config_id)
+            if shift_config:
                 weekly_capacity = line.get_weekly_capacity(shift_config)
-            except ShiftConfiguration.DoesNotExist:
+            else:
                 weekly_capacity = line.get_weekly_capacity(for_date=for_date)
         else:
             # Use date-based override or default config
@@ -192,7 +348,8 @@ def calculate_weekly_capacity(line_ids: list, shift_configs: dict, for_date=None
 
 def calculate_capacity_per_week(line_ids: list, shift_configs: dict, weeks: list) -> dict:
     """
-    Calculate capacity for each week, considering LineConfigOverrides
+    Calculate capacity for each week, considering LineConfigOverrides.
+    Optimized: Pre-loads all lines with configs once.
     
     Args:
         line_ids: List of production line IDs
@@ -204,25 +361,42 @@ def calculate_capacity_per_week(line_ids: list, shift_configs: dict, weeks: list
     """
     capacity_by_week = {}
     
+    if not weeks:
+        return capacity_by_week
+    
+    # Pre-load all lines with configs for the entire date range
+    start_date = min(weeks)
+    end_date = max(weeks) + timedelta(days=6)  # Include the whole last week
+    lines_dict = _get_lines_with_configs(line_ids, start_date, end_date)
+    
     for week_start in weeks:
         # Use the middle of the week for override checking
         week_date = week_start + timedelta(days=3)
-        capacity = calculate_weekly_capacity(line_ids, shift_configs, for_date=week_date)
+        capacity = calculate_weekly_capacity(line_ids, shift_configs, for_date=week_date, lines_dict=lines_dict)
         capacity_by_week[week_start] = capacity
     
     return capacity_by_week
 
 
-def get_line_config_details(line_ids: list, for_date) -> list:
+def get_line_config_details(line_ids: list, for_date, lines_dict: dict = None) -> list:
     """
     Get configuration details for lines for a specific date
     Shows which config is active (override or default)
+    Optimized: Uses pre-loaded lines if provided
     """
-    lines = ProductionLine.objects.filter(id__in=line_ids, is_active=True)
+    if lines_dict is None:
+        lines_dict = _get_lines_with_configs(line_ids, for_date, for_date)
+    
     details = []
     
-    for line in lines:
-        config = line.get_config_for_date(for_date)
+    for line_id in line_ids:
+        line = lines_dict.get(line_id)
+        if not line:
+            continue
+            
+        config = _get_config_for_date_from_prefetched(
+            line, for_date, getattr(line, 'prefetched_overrides', [])
+        )
         if config:
             details.append({
                 'line_id': line.id,
@@ -248,22 +422,17 @@ def get_demand_for_lines(line_ids: list, week_start, week_end,
                          category_id: Optional[int] = None,
                          product_id: Optional[int] = None) -> dict:
     """
-    Get demand forecast aggregated by week for products on specified lines
+    Get demand forecast aggregated by week for products on specified lines.
+    Optimized: Uses cached product IDs.
     
     Returns:
         Dict mapping week_start_date -> total_demand
     """
-    # Get products assigned to these lines
-    assignments = LineProductAssignment.objects.filter(
-        line_id__in=line_ids
-    ).values_list('product_id', flat=True)
+    # Get products assigned to these lines (cached)
+    product_ids = _get_product_ids_for_lines(line_ids)
     
-    # Also get products with default_line in the selected lines
-    default_products = Product.objects.filter(
-        default_line_id__in=line_ids
-    ).values_list('id', flat=True)
-    
-    product_ids = set(list(assignments) + list(default_products))
+    if not product_ids:
+        return {}
     
     # Build forecast query
     forecast_filter = Q(
@@ -295,24 +464,23 @@ def get_demand_for_category(category_id: int, line_ids: list,
                             week_start, week_end,
                             product_id: Optional[int] = None) -> dict:
     """
-    Get demand forecast for a specific category on specified lines
+    Get demand forecast for a specific category on specified lines.
+    Optimized: Uses cached product IDs and filters by category.
     """
-    # Get products in this category that can be produced on these lines
-    category_products = Product.objects.filter(category_id=category_id)
+    # Get all products for these lines
+    all_product_ids = _get_product_ids_for_lines(line_ids)
     
-    assignments = LineProductAssignment.objects.filter(
-        line_id__in=line_ids,
-        product__category_id=category_id
-    ).values_list('product_id', flat=True)
+    # Filter to only products in this category
+    category_product_ids = set(Product.objects.filter(
+        id__in=all_product_ids,
+        category_id=category_id
+    ).values_list('id', flat=True))
     
-    default_products = category_products.filter(
-        default_line_id__in=line_ids
-    ).values_list('id', flat=True)
-    
-    product_ids = set(list(assignments) + list(default_products))
+    if not category_product_ids:
+        return {}
     
     forecast_filter = Q(
-        product_id__in=product_ids,
+        product_id__in=category_product_ids,
         week_start_date__gte=week_start,
         week_start_date__lte=week_end
     )
@@ -330,16 +498,11 @@ def get_demand_for_category(category_id: int, line_ids: list,
 
 
 def get_client_demand(client_id: int, line_ids: list, week_start, week_end) -> dict:
-    """Get demand for a specific client on specified lines"""
-    assignments = LineProductAssignment.objects.filter(
-        line_id__in=line_ids
-    ).values_list('product_id', flat=True)
+    """Get demand for a specific client on specified lines. Optimized with caching."""
+    product_ids = _get_product_ids_for_lines(line_ids)
     
-    default_products = Product.objects.filter(
-        default_line_id__in=line_ids
-    ).values_list('id', flat=True)
-    
-    product_ids = set(list(assignments) + list(default_products))
+    if not product_ids:
+        return {}
     
     forecasts = DemandForecast.objects.filter(
         client_id=client_id,
@@ -357,6 +520,7 @@ def apply_demand_modifications_weekly(demand_data: dict, modifications: list,
                                       line_ids: list, weeks: list) -> dict:
     """
     Apply demand modifications (percentage adjustments) to weekly demand data.
+    Optimized: Uses cached product IDs.
     
     Args:
         demand_data: Dict mapping week_start -> demand value
@@ -375,16 +539,9 @@ def apply_demand_modifications_weekly(demand_data: dict, modifications: list,
     if not modifications:
         return demand_data
     
-    # Get products for the lines
-    assignments = LineProductAssignment.objects.filter(
-        line_id__in=line_ids
-    ).values_list('product_id', flat=True)
-    
-    default_products = Product.objects.filter(
-        default_line_id__in=line_ids
-    ).values_list('id', flat=True)
-    
-    valid_product_ids = set(list(assignments) + list(default_products))
+    # Get products for the lines (cached)
+    valid_product_ids = _get_product_ids_for_lines(line_ids)
+    weeks_set = set(weeks)
     
     for mod in modifications:
         client_id = mod.get('client_id')
@@ -429,7 +586,7 @@ def apply_demand_modifications_weekly(demand_data: dict, modifications: list,
         for forecast in affected_forecasts:
             week_start = forecast['week_start_date']
             # Only process weeks that are in our simulation range
-            if week_start in weeks:
+            if week_start in weeks_set:
                 # Calculate modification amount
                 modification_amount = forecast['total_demand'] * factor
                 
@@ -449,6 +606,7 @@ def apply_demand_modifications_daily(demand_data: dict, modifications: list,
                                      line_ids: list, days: list) -> dict:
     """
     Apply demand modifications (percentage adjustments) to daily demand data.
+    Optimized: Uses cached product IDs.
     
     Args:
         demand_data: Dict mapping date -> demand value
@@ -462,16 +620,8 @@ def apply_demand_modifications_daily(demand_data: dict, modifications: list,
     if not modifications:
         return demand_data
     
-    # Get products for the lines
-    assignments = LineProductAssignment.objects.filter(
-        line_id__in=line_ids
-    ).values_list('product_id', flat=True)
-    
-    default_products = Product.objects.filter(
-        default_line_id__in=line_ids
-    ).values_list('id', flat=True)
-    
-    valid_product_ids = set(list(assignments) + list(default_products))
+    # Get products for the lines (cached)
+    valid_product_ids = _get_product_ids_for_lines(line_ids)
     
     for mod in modifications:
         client_id = mod.get('client_id')
@@ -617,9 +767,12 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
                                  overlay_client_codes, overlay_data,
                                  combine_clients=False, client_ids=None,
                                  demand_modifications=None):
-    """Weekly granularity simulation"""
+    """Weekly granularity simulation. Optimized with batch loading."""
     # Get weeks in range
     weeks = get_weeks_in_range(start_date, end_date)
+    
+    # Pre-load all lines with configs for the entire date range
+    lines_dict = _get_lines_with_configs(line_ids, start_date, end_date + timedelta(days=6))
     
     # Calculate capacity per week (considers overrides)
     capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks)
@@ -651,29 +804,33 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
     if client_id:
         overlay_demand = get_client_demand(client_id, line_ids, start_date, end_date)
     
-    # Get client overlay data by code
+    # Pre-fetch all overlay clients in one query
     client_overlays = {}
-    for client_code in overlay_client_codes:
-        client = Client.objects.filter(code__iexact=client_code).first()
-        if client:
-            client_demand = get_client_demand(client.id, line_ids, start_date, end_date)
-            # Build data points for this client
-            client_data_points = []
-            for week_start in weeks:
-                demand = client_demand.get(week_start, Decimal('0'))
-                client_data_points.append({
-                    'date': f"W{week_start.isocalendar()[1]}/{week_start.year}",
-                    'week_start': week_start,
-                    'demand': demand
-                })
-            client_overlays[client.code] = {
-                'client_name': client.name,
-                'client_id': client.id,
-                'data_points': client_data_points,
-                'total_demand': sum(dp['demand'] for dp in client_data_points)
-            }
+    if overlay_client_codes:
+        overlay_clients = Client.objects.filter(code__iexact__in=overlay_client_codes)
+        overlay_client_map = {c.code.upper(): c for c in overlay_clients}
+        
+        for client_code in overlay_client_codes:
+            client = overlay_client_map.get(client_code.upper())
+            if client:
+                client_demand = get_client_demand(client.id, line_ids, start_date, end_date)
+                # Build data points for this client
+                client_data_points = []
+                for week_start in weeks:
+                    demand = client_demand.get(week_start, Decimal('0'))
+                    client_data_points.append({
+                        'date': f"W{week_start.isocalendar()[1]}/{week_start.year}",
+                        'week_start': week_start,
+                        'demand': demand
+                    })
+                client_overlays[client.code] = {
+                    'client_name': client.name,
+                    'client_id': client.id,
+                    'data_points': client_data_points,
+                    'total_demand': sum(dp['demand'] for dp in client_data_points)
+                }
     
-    # Build data points
+    # Build data points - calculate override status once per week using pre-loaded data
     data_points = []
     total_demand = Decimal('0')
     total_capacity = Decimal('0')
@@ -697,10 +854,18 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
         if over_capacity:
             over_capacity_count += 1
         
-        # Get config details for this week to show override info
+        # Check for overrides using pre-loaded data
         week_date = week_start + timedelta(days=3)
-        config_details = get_line_config_details(line_ids, week_date)
-        has_override = any(c['config_type'] == 'override' for c in config_details)
+        has_override = False
+        for line_id in line_ids:
+            line = lines_dict.get(line_id)
+            if line:
+                config = _get_config_for_date_from_prefetched(
+                    line, week_date, getattr(line, 'prefetched_overrides', [])
+                )
+                if config and config['type'] == 'override':
+                    has_override = True
+                    break
         
         data_point = {
             'date': f"W{week_start.isocalendar()[1]}/{week_start.year}",
@@ -744,9 +909,12 @@ def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
                                 overlay_client_codes, overlay_data,
                                 combine_clients=False, client_ids=None,
                                 demand_modifications=None):
-    """Daily granularity simulation"""
+    """Daily granularity simulation. Optimized with batch loading."""
     # Get days in range
     days = get_days_in_range(start_date, end_date)
+    
+    # Pre-load all lines with configs for the entire date range
+    lines_dict = _get_lines_with_configs(line_ids, start_date, end_date)
     
     # Calculate capacity per day (considers overrides)
     capacity_by_day = calculate_capacity_per_day(line_ids, config_dict, days)
@@ -777,27 +945,31 @@ def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
     if client_id:
         overlay_demand = get_client_demand_daily(client_id, line_ids, start_date, end_date)
     
-    # Get client overlay data by code
+    # Pre-fetch all overlay clients in one query
     client_overlays = {}
-    for client_code in overlay_client_codes:
-        client = Client.objects.filter(code__iexact=client_code).first()
-        if client:
-            client_demand = get_client_demand_daily(client.id, line_ids, start_date, end_date)
-            # Build data points for this client
-            client_data_points = []
-            for day in days:
-                demand = client_demand.get(day, Decimal('0'))
-                client_data_points.append({
-                    'date': day.strftime('%Y-%m-%d'),
-                    'day': day,
-                    'demand': demand
-                })
-            client_overlays[client.code] = {
-                'client_name': client.name,
-                'client_id': client.id,
-                'data_points': client_data_points,
-                'total_demand': sum(dp['demand'] for dp in client_data_points)
-            }
+    if overlay_client_codes:
+        overlay_clients = Client.objects.filter(code__iexact__in=overlay_client_codes)
+        overlay_client_map = {c.code.upper(): c for c in overlay_clients}
+        
+        for client_code in overlay_client_codes:
+            client = overlay_client_map.get(client_code.upper())
+            if client:
+                client_demand = get_client_demand_daily(client.id, line_ids, start_date, end_date)
+                # Build data points for this client
+                client_data_points = []
+                for day in days:
+                    demand = client_demand.get(day, Decimal('0'))
+                    client_data_points.append({
+                        'date': day.strftime('%Y-%m-%d'),
+                        'day': day,
+                        'demand': demand
+                    })
+                client_overlays[client.code] = {
+                    'client_name': client.name,
+                    'client_id': client.id,
+                    'data_points': client_data_points,
+                    'total_demand': sum(dp['demand'] for dp in client_data_points)
+                }
     
     # Build data points
     data_points = []
@@ -823,9 +995,17 @@ def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
         if over_capacity:
             over_capacity_count += 1
         
-        # Get config details for this day to show override info
-        config_details = get_line_config_details(line_ids, day)
-        has_override = any(c['config_type'] == 'override' for c in config_details)
+        # Check for overrides using pre-loaded data
+        has_override = False
+        for line_id in line_ids:
+            line = lines_dict.get(line_id)
+            if line:
+                config = _get_config_for_date_from_prefetched(
+                    line, day, getattr(line, 'prefetched_overrides', [])
+                )
+                if config and config['type'] == 'override':
+                    has_override = True
+                    break
         
         # Get day name for display
         day_name = day.strftime('%a')  # Mon, Tue, etc.
