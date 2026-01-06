@@ -26,7 +26,7 @@
 
 <div class="row">
     <!-- Configuration Panel -->
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card mb-4" style="max-height: 85vh; min-height: 500px; display: flex; flex-direction: column;">
             <div class="card-header">
                 <i class="bi bi-sliders"></i> <span style="color: #ea6d09;">Configuration</span>
@@ -301,7 +301,7 @@
     </div>
 
     <!-- Results Panel -->
-    <div class="col-md-8">
+    <div class="col-md-9">
         <!-- Stats Cards -->
         <div class="row mb-4">
             <div class="col-md-3">
@@ -898,6 +898,9 @@
                 backgroundColor: chartColors.accentLight,
                 fill: false,
                 tension: 0.3,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                pointHoverRadius: 5,
                 order: 2
             }
         ];
@@ -939,7 +942,7 @@
                 return scenarioColorsBorder[index % scenarioColorsBorder.length];
             });
             const capacityPointRadius = scenarioDataPoints.map(dp => 
-                dp.has_override ? 6 : 3
+                dp.has_override ? 4 : 0
             );
             
             datasets.push({
@@ -953,8 +956,8 @@
                 pointBackgroundColor: capacityPointColors,
                 pointBorderColor: capacityPointColors,
                 pointRadius: capacityPointRadius,
-                pointHoverRadius: 8,
-                borderWidth: index === 0 ? 2.5 : 2,
+                pointHoverRadius: 5,
+                borderWidth: index === 0 ? 1.5 : 1,
                 order: 1 + index * 0.1
             });
         });
@@ -986,9 +989,10 @@
                 backgroundColor: '#17a2b840',
                 fill: false,
                 tension: 0.3,
-                borderWidth: 3,
+                borderWidth: 1.5,
                 borderDash: [10, 5],
-                pointRadius: 5,
+                pointRadius: 0,
+                pointHoverRadius: 5,
                 pointStyle: 'rectRot',
                 order: 0
             });
@@ -1017,8 +1021,9 @@
                 backgroundColor: '#9b59b640',
                 fill: false,
                 tension: 0.3,
-                borderWidth: 3,
-                pointRadius: 5,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                pointHoverRadius: 5,
                 order: 3
             });
         } else {
@@ -1039,8 +1044,9 @@
                     backgroundColor: color + '40',
                     fill: false,
                     tension: 0.3,
-                    borderWidth: 2,
-                    pointRadius: 4,
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    pointHoverRadius: 5,
                     order: 3 + index
                 });
             });
@@ -1130,7 +1136,7 @@
             return chartColors.primary;
         });
         const capacityPointRadius = dataPoints.map(dp => 
-            dp.has_override ? 6 : 3
+            dp.has_override ? 4 : 0
         );
         
         // Build datasets array
@@ -1142,6 +1148,9 @@
                 backgroundColor: chartColors.accentLight,
                 fill: false,
                 tension: 0.3,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                pointHoverRadius: 5,
                 order: 2
             },
             {
@@ -1152,10 +1161,11 @@
                 borderDash: [5, 5],
                 fill: true,
                 tension: 0,
+                borderWidth: 1.5,
                 pointBackgroundColor: capacityPointColors,
                 pointBorderColor: capacityPointColors,
                 pointRadius: capacityPointRadius,
-                pointHoverRadius: 8,
+                pointHoverRadius: 5,
                 order: 1
             }
         ];
@@ -1187,9 +1197,10 @@
                 backgroundColor: '#17a2b840',
                 fill: false,
                 tension: 0.3,
-                borderWidth: 3,
+                borderWidth: 1.5,
                 borderDash: [10, 5],
-                pointRadius: 5,
+                pointRadius: 0,
+                pointHoverRadius: 5,
                 pointStyle: 'rectRot',
                 order: 0  // Draw on top
             });
@@ -1219,8 +1230,9 @@
                 backgroundColor: '#9b59b640',
                 fill: false,
                 tension: 0.3,
-                borderWidth: 3,
-                pointRadius: 5,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                pointHoverRadius: 5,
                 order: 3
             });
         } else {
@@ -1242,8 +1254,9 @@
                     backgroundColor: color + '40',  // Add transparency
                     fill: false,
                     tension: 0.3,
-                    borderWidth: 2,
-                    pointRadius: 4,
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    pointHoverRadius: 5,
                     order: 3 + index
                 });
             });

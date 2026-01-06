@@ -807,7 +807,13 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
     # Pre-fetch all overlay clients in one query
     client_overlays = {}
     if overlay_client_codes:
-        overlay_clients = Client.objects.filter(code__iexact__in=overlay_client_codes)
+        # Use code__in for matching (case-sensitive, but codes should match)
+        upper_codes = [code.upper() for code in overlay_client_codes]
+        overlay_clients = Client.objects.filter(code__in=overlay_client_codes)
+        # Fallback: fetch all and filter in Python for case-insensitive match
+        if not overlay_clients.exists():
+            all_clients = Client.objects.filter(is_active=True)
+            overlay_clients = [c for c in all_clients if c.code.upper() in upper_codes]
         overlay_client_map = {c.code.upper(): c for c in overlay_clients}
         
         for client_code in overlay_client_codes:
@@ -948,7 +954,13 @@ def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
     # Pre-fetch all overlay clients in one query
     client_overlays = {}
     if overlay_client_codes:
-        overlay_clients = Client.objects.filter(code__iexact__in=overlay_client_codes)
+        # Use code__in with uppercase codes for case-insensitive matching
+        upper_codes = [code.upper() for code in overlay_client_codes]
+        overlay_clients = Client.objects.filter(code__in=overlay_client_codes)
+        # Fallback: fetch all and filter in Python for case-insensitive match
+        if not overlay_clients.exists():
+            all_clients = Client.objects.filter(is_active=True)
+            overlay_clients = [c for c in all_clients if c.code.upper() in upper_codes]
         overlay_client_map = {c.code.upper(): c for c in overlay_clients}
         
         for client_code in overlay_client_codes:
