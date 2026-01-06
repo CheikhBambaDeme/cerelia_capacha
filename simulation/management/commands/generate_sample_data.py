@@ -155,19 +155,21 @@ class Command(BaseCommand):
                     defaults={'is_default': False}
                 )
 
-        # Generate Demand Forecasts (2 years of weekly data)
-        self.stdout.write('  Generating demand forecasts (this may take a moment)...')
-        
-        # Start from current week
+        # Generate Demand Forecasts (weekly data until end of 2029)
+        self.stdout.write('  Generating demand forecasts until end of 2029 (this may take a moment)...')
+
         today = datetime.now().date()
         start_date = today - timedelta(days=today.weekday())  # Monday of current week
-        
-        # Generate 104 weeks (2 years) of forecasts
+        end_date = datetime(2029, 12, 31).date()
+        total_weeks = ((end_date - start_date).days // 7) + 1
+
         forecasts_created = 0
-        for week_offset in range(104):
+        for week_offset in range(total_weeks):
             week_start = start_date + timedelta(weeks=week_offset)
+            if week_start > end_date:
+                break
             year, week_num, _ = week_start.isocalendar()
-            
+
             # Seasonal factor (higher demand in winter)
             month = (week_start + timedelta(days=3)).month
             if month in [11, 12, 1, 2]:
@@ -176,17 +178,13 @@ class Command(BaseCommand):
                 seasonal_factor = 0.8
             else:
                 seasonal_factor = 1.0
-            
+
             # Create forecasts for a subset of client-product combinations
             for client in clients:
-                # Each client orders from some products
                 client_products = random.sample(products, min(random.randint(10, 30), len(products)))
-                
                 for product in client_products:
-                    # Base demand with some randomness
                     base_demand = random.randint(500, 5000)
                     demand = int(base_demand * seasonal_factor * random.uniform(0.8, 1.2))
-                    
                     forecast, created = DemandForecast.objects.get_or_create(
                         client=client,
                         product=product,
