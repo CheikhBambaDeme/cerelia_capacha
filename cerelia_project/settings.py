@@ -62,6 +62,21 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        # SQLite optimizations for read performance
+        'OPTIONS': {
+            'timeout': 20,
+        }
+    }
+}
+
+# Caching configuration - use local memory cache for development
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+        'OPTIONS': {
+            'MAX_ENTRIES': 10000
+        }
     }
 }
 

@@ -38,7 +38,7 @@
 
 <!-- Dashboard Cards -->
 <div class="row">
-    <div class="col-md-6 mb-4">
+    <div class="col-md-12 mb-4">
         <div class="card h-100">
             <div class="card-header">
                 <i class="bi bi-bar-chart-line"></i> Line Simulation
@@ -49,27 +49,9 @@
                     <li>Select lines and configure shift patterns</li>
                     <li>View demand curves for all products on selected lines</li>
                     <li>Overlay specific client, product, or category demand</li>
+                    <li>Filter by product category for category-focused analysis</li>
                 </ul>
                 <a href="{% url 'line_simulation' %}" class="btn btn-primary">
-                    <i class="bi bi-arrow-right-circle"></i> Open Simulation
-                </a>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-6 mb-4">
-        <div class="card h-100">
-            <div class="card-header">
-                <i class="bi bi-grid-3x3-gap"></i> Category Simulation
-            </div>
-            <div class="card-body">
-                <p>Analyze demand for a specific product category and capacity coverage.</p>
-                <ul class="text-muted">
-                    <li>Choose product category (Pizza, Pastry, Pancakes...)</li>
-                    <li>Select production lines and set capacity scenarios</li>
-                    <li>Overlay demand for specific articles within category</li>
-                </ul>
-                <a href="{% url 'category_simulation' %}" class="btn btn-success">
                     <i class="bi bi-arrow-right-circle"></i> Open Simulation
                 </a>
             </div>
