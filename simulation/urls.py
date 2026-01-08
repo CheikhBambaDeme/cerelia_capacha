@@ -9,7 +9,6 @@ from . import views
 # API Router
 router = DefaultRouter()
 router.register(r'sites', views.SiteViewSet)
-router.register(r'categories', views.ProductCategoryViewSet)
 router.register(r'shift-configs', views.ShiftConfigurationViewSet)
 router.register(r'lines', views.ProductionLineViewSet)
 router.register(r'clients', views.ClientViewSet)

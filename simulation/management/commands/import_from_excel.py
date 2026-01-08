@@ -10,7 +10,7 @@ import pandas as pd
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from simulation.models import (
-    Site, ProductCategory, ShiftConfiguration, ProductionLine,
+    Site, ShiftConfiguration, ProductionLine,
     Client, Product, LineProductAssignment, DemandForecast,
     SimulationCategory, CustomShiftConfiguration
 )
@@ -58,14 +58,11 @@ class Command(BaseCommand):
                 # 2. Create Shift Configurations
                 shift_configs = self._create_shift_configurations()
                 
-                # 3. Create Product Categories
-                categories = self._create_categories()
-                
-                # 4. Create Production Lines
+                # 3. Create Production Lines
                 lines = self._create_lines(data_df, sites, shift_configs)
                 
-                # 5. Create Products
-                products = self._create_products(data_df, categories, lines)
+                # 4. Create Products
+                products = self._create_products(data_df, lines)
                 
                 # 6. Create Line-Product Assignments
                 self._create_line_product_assignments(data_df, lines, products)
@@ -93,7 +90,6 @@ class Command(BaseCommand):
         Product.objects.all().delete()
         ProductionLine.objects.all().delete()
         Client.objects.all().delete()
-        ProductCategory.objects.all().delete()
         ShiftConfiguration.objects.all().delete()
         Site.objects.all().delete()
         SimulationCategory.objects.all().delete()
@@ -173,28 +169,6 @@ class Command(BaseCommand):
         
         return configs
 
-    def _create_categories(self):
-        """Create product categories"""
-        categories_data = [
-            {'name': 'Pizza', 'color_code': '#ea6d09', 'description': 'Pizza products'},
-            {'name': 'Pâtisserie', 'color_code': '#f5dd1f', 'description': 'Pastry products'},
-            {'name': 'Pain', 'color_code': '#5e3e2f', 'description': 'Bread products'},
-            {'name': 'Crêpes', 'color_code': '#8B4513', 'description': 'Pancake and crepe products'},
-            {'name': 'Biscuits', 'color_code': '#D2691E', 'description': 'Cookie and biscuit products'},
-            {'name': 'Autres', 'color_code': '#6c757d', 'description': 'Other products'},
-        ]
-        
-        categories = {}
-        for data in categories_data:
-            category, created = ProductCategory.objects.get_or_create(
-                name=data['name'], defaults=data
-            )
-            categories[data['name']] = category
-            if created:
-                self.stdout.write(f'  Created category: {category.name}')
-        
-        return categories
-
     def _create_lines(self, data_df, sites, shift_configs):
         """Create production lines from the data"""
         lines_df = data_df[["Ligne", "Site"]].drop_duplicates().reset_index(drop=True)
@@ -234,7 +208,7 @@ class Command(BaseCommand):
         
         return lines
 
-    def _create_products(self, data_df, categories, lines):
+    def _create_products(self, data_df, lines):
         """Create products from the data"""
         products_df = data_df[["Article", "Libellé", "Type Produit", "Type de recette", 
                               "Type de matière", "Type d'emballage"]].drop_duplicates().reset_index(drop=True)
@@ -248,9 +222,6 @@ class Command(BaseCommand):
         ]
         default_line_dict = dict(zip(default_line_df['Article'], default_line_df['Ligne']))
         
-        # Default category
-        default_category = list(categories.values())[0]
-        
         products = {}
         for _, row in products_df.iterrows():
             code = str(row['Article'])
@@ -262,18 +233,6 @@ class Command(BaseCommand):
             material_type = row['Type de matière'] if pd.notna(row['Type de matière']) else ''
             packaging_type = row["Type d'emballage"] if pd.notna(row["Type d'emballage"]) else ''
             
-            # Determine category based on product type
-            category = default_category
-            product_type_lower = product_type.lower() if product_type else ''
-            if 'pizza' in product_type_lower:
-                category = categories.get('Pizza', default_category)
-            elif 'pâtisserie' in product_type_lower or 'patisserie' in product_type_lower:
-                category = categories.get('Pâtisserie', default_category)
-            elif 'pain' in product_type_lower:
-                category = categories.get('Pain', default_category)
-            elif 'crêpe' in product_type_lower or 'crepe' in product_type_lower:
-                category = categories.get('Crêpes', default_category)
-            
             # Get default line
             default_line_code = default_line_dict.get(row['Article'])
             default_line = lines.get(default_line_code) if default_line_code else None
@@ -282,7 +241,6 @@ class Command(BaseCommand):
                 code=code,
                 defaults={
                     'name': name[:200],
-                    'category': category,
                     'default_line': default_line,
                     'product_type': str(product_type)[:100] if product_type else '',
                     'recipe_type': str(recipe_type)[:100] if recipe_type else '',

@@ -10,35 +10,41 @@
 
 <!-- Quick Stats -->
 <div class="row mb-4">
-    <div class="col-md-3">
+    <div class="col">
         <div class="card stat-card">
             <div class="stat-value" id="totalLines">-</div>
             <div class="stat-label">Production Lines</div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col">
         <div class="card stat-card">
             <div class="stat-value" id="totalProducts">-</div>
             <div class="stat-label">Products</div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col">
         <div class="card stat-card">
             <div class="stat-value" id="totalClients">-</div>
             <div class="stat-label">Active Clients</div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col">
         <div class="card stat-card">
-            <div class="stat-value" id="totalCategories">-</div>
-            <div class="stat-label">Product Categories</div>
+            <div class="stat-value" id="totalSimCategories">-</div>
+            <div class="stat-label">Sim. Categories</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card stat-card">
+            <div class="stat-value" id="totalOverrides">-</div>
+            <div class="stat-label">Active Overrides</div>
         </div>
     </div>
 </div>
 
 <!-- Dashboard Cards -->
 <div class="row">
-    <div class="col-md-12 mb-4">
+    <div class="col-md-6 mb-4">
         <div class="card h-100">
             <div class="card-header">
                 <i class="bi bi-bar-chart-line"></i> Line Simulation
@@ -47,9 +53,9 @@
                 <p>Analyze demand on one or multiple production lines under chosen capacity settings.</p>
                 <ul class="text-muted">
                     <li>Select lines and configure shift patterns</li>
-                    <li>View demand curves for all products on selected lines</li>
+                    <li>View demand curves for products with default lines</li>
                     <li>Overlay specific client, product, or category demand</li>
-                    <li>Filter by product category for category-focused analysis</li>
+                    <li>Use simulation categories for quick filtering</li>
                 </ul>
                 <a href="{% url 'line_simulation' %}" class="btn btn-primary">
                     <i class="bi bi-arrow-right-circle"></i> Open Simulation
@@ -57,7 +63,63 @@
             </div>
         </div>
     </div>
-    
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-collection"></i> Simulation Categories
+            </div>
+            <div class="card-body">
+                <p>Create and manage reusable simulation categories for quick filtering.</p>
+                <ul class="text-muted">
+                    <li>Group lines by site or purpose</li>
+                    <li>Filter by product type, recipe, material, packaging</li>
+                    <li>Save common configurations for reuse</li>
+                </ul>
+                <a href="{% url 'simulation_category' %}" class="btn btn-primary">
+                    <i class="bi bi-arrow-right-circle"></i> Manage Categories
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-wrench-adjustable"></i> Line Configuration
+            </div>
+            <div class="card-body">
+                <p>Configure production line settings and override schedules.</p>
+                <ul class="text-muted">
+                    <li>Set line efficiency factors</li>
+                    <li>Schedule temporary configuration overrides</li>
+                    <li>Set up recurring maintenance periods</li>
+                </ul>
+                <a href="{% url 'line_configuration' %}" class="btn btn-outline-primary">
+                    <i class="bi bi-arrow-right-circle"></i> Configure Lines
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-clock-history"></i> Shift Management
+            </div>
+            <div class="card-body">
+                <p>Manage shift configurations and custom schedules.</p>
+                <ul class="text-muted">
+                    <li>View system shift configurations</li>
+                    <li>Create custom shift patterns</li>
+                    <li>Configure weekend and holiday schedules</li>
+                </ul>
+                <a href="{% url 'shift_management' %}" class="btn btn-outline-primary">
+                    <i class="bi bi-arrow-right-circle"></i> Manage Shifts
+                </a>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Quick Links -->
@@ -101,17 +163,25 @@
     // Load dashboard stats
     async function loadStats() {
         try {
-            const [lines, products, clients, categories] = await Promise.all([
+            const [lines, products, clients, simCategories, overrides] = await Promise.all([
                 fetchAPI('lines/'),
                 fetchAPI('products/'),
                 fetchAPI('clients/'),
-                fetchAPI('categories/')
+                fetchAPI('simulation-categories/'),
+                fetchAPI('line-overrides/upcoming/')
             ]);
             
-            document.getElementById('totalLines').textContent = lines.results ? lines.results.length : lines.length || 0;
-            document.getElementById('totalProducts').textContent = products.results ? products.results.length : products.length || 0;
-            document.getElementById('totalClients').textContent = clients.results ? clients.results.length : clients.length || 0;
-            document.getElementById('totalCategories').textContent = categories.results ? categories.results.length : categories.length || 0;
+            // Use 'count' field for paginated APIs, fallback to array length for non-paginated
+            document.getElementById('totalLines').textContent = lines.count ?? (lines.results ? lines.results.length : lines.length) ?? 0;
+            document.getElementById('totalProducts').textContent = products.count ?? (products.results ? products.results.length : products.length) ?? 0;
+            document.getElementById('totalClients').textContent = clients.count ?? (clients.results ? clients.results.length : clients.length) ?? 0;
+            document.getElementById('totalSimCategories').textContent = simCategories.count ?? (simCategories.results ? simCategories.results.length : simCategories.length) ?? 0;
+            
+            // Count active overrides (where today is between start and end date)
+            const today = new Date().toISOString().split('T')[0];
+            const overridesList = overrides.results || overrides || [];
+            const activeOverrides = overridesList.filter(o => o.start_date <= today && o.end_date >= today).length;
+            document.getElementById('totalOverrides').textContent = activeOverrides;
         } catch (error) {
             console.error('Error loading stats:', error);
         }

@@ -190,21 +190,29 @@
                 <h6 class="mb-3"><i class="bi bi-gear"></i> Shift Configuration</h6>
                 
                 <div class="row">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <div class="mb-3">
-                            <label class="form-label">Number of Shifts per Day *</label>
+                            <label class="form-label">Shifts per Day *</label>
                             <select class="form-select" id="overrideShifts" onchange="updatePreview()">
+                                <option value="0">0 (Shutdown)</option>
                                 <option value="1">1 shift</option>
                                 <option value="2">2 shifts</option>
                                 <option value="3" selected>3 shifts</option>
                             </select>
                         </div>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <div class="mb-3">
                             <label class="form-label">Hours per Shift *</label>
                             <input type="number" class="form-control" id="overrideHours" 
-                                   value="8" min="0.5" max="12" step="0.5" onchange="updatePreview()">
+                                   value="8" min="0" max="12" step="0.5" onchange="updatePreview()">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label class="form-label">Days per Week *</label>
+                            <input type="number" class="form-control" id="overrideDays" 
+                                   value="5" min="0" max="7" step="1" onchange="updatePreview()">
                         </div>
                     </div>
                 </div>
@@ -227,13 +235,14 @@
                                     </label>
                                 </div>
                             </div>
+                            <small class="text-muted">These flags are for display purposes. Set days to 6 or 7 for weekend work.</small>
                         </div>
                     </div>
                     <div class="col-md-6">
                         <div class="mb-3">
                             <label class="form-label">Configuration Preview</label>
                             <div class="alert alert-info mb-0 py-2">
-                                <span class="config-badge" id="configPreview">3x8</span>
+                                <span class="config-badge" id="configPreview">3x8 5d</span>
                                 <span class="ms-2 text-muted">= <span id="weeklyHoursPreview">120</span> hours/week</span>
                             </div>
                         </div>
@@ -244,16 +253,17 @@
                 <div class="mb-3">
                     <label class="form-label">Quick Presets</label>
                     <div class="d-flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="applyPreset(3, 8, false, false)">3×8</button>
-                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="applyPreset(3, 8, true, false)">3×8 S</button>
-                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="applyPreset(3, 8, true, true)">3×8 SS</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="applyPreset(2, 8, false, false)">2×8</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="applyPreset(2, 8, true, false)">2×8 S</button>
-                        <button type="button" class="btn btn-sm btn-outline-warning" onclick="applyPreset(3, 4, false, false)">3×4</button>
-                        <button type="button" class="btn btn-sm btn-outline-warning" onclick="applyPreset(2, 4, false, false)">2×4</button>
-                        <button type="button" class="btn btn-sm btn-outline-warning" onclick="applyPreset(2, 4, true, false)">2×4 S</button>
-                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="applyPreset(1, 8, false, false)">1×8</button>
-                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="applyPreset(1, 4, false, false)">1×4</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="applyPreset(3, 8, 5, false, false)">3×8 5d</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="applyPreset(3, 8, 6, true, false)">3×8 S 6d</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="applyPreset(3, 8, 7, true, true)">3×8 SS 7d</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="applyPreset(2, 8, 5, false, false)">2×8 5d</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="applyPreset(2, 8, 6, true, false)">2×8 S 6d</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="applyPreset(2, 8, 7, true, true)">2×8 SS 7d</button>
+                        <button type="button" class="btn btn-sm btn-outline-warning" onclick="applyPreset(2, 7, 5, false, false)">2×7 5d</button>
+                        <button type="button" class="btn btn-sm btn-outline-warning" onclick="applyPreset(1, 8, 5, false, false)">1×8 5d</button>
+                        <button type="button" class="btn btn-sm btn-outline-warning" onclick="applyPreset(1, 12, 6, true, false)">1×12 6d</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="applyPreset(2, 12, 2, true, true)">2×12 WE 2d</button>
+                        <button type="button" class="btn btn-sm btn-outline-dark" onclick="applyPreset(0, 0, 0, false, false)">Shutdown</button>
                     </div>
                 </div>
             </div>
@@ -526,25 +536,32 @@
     }
 
     function updatePreview() {
-        const shifts = parseInt(document.getElementById('overrideShifts').value);
+        const shifts = parseInt(document.getElementById('overrideShifts').value) || 0;
         const hours = parseFloat(document.getElementById('overrideHours').value) || 0;
+        const days = parseInt(document.getElementById('overrideDays').value) || 0;
         const saturday = document.getElementById('overrideSaturday').checked;
         const sunday = document.getElementById('overrideSunday').checked;
         
-        let configStr = `${shifts}×${hours}`;
-        if (saturday && sunday) configStr += ' SS';
-        else if (saturday) configStr += ' S';
+        let configStr;
+        if (shifts === 0) {
+            configStr = 'Shutdown';
+        } else {
+            configStr = `${shifts}×${hours}`;
+            if (saturday && sunday) configStr += ' SS';
+            else if (saturday) configStr += ' S';
+            configStr += ` ${days}d`;
+        }
         
-        const daysPerWeek = 5 + (saturday ? 1 : 0) + (sunday ? 1 : 0);
-        const weeklyHours = shifts * hours * daysPerWeek;
+        const weeklyHours = shifts * hours * days;
         
         document.getElementById('configPreview').textContent = configStr;
         document.getElementById('weeklyHoursPreview').textContent = weeklyHours;
     }
 
-    function applyPreset(shifts, hours, saturday, sunday) {
+    function applyPreset(shifts, hours, days, saturday, sunday) {
         document.getElementById('overrideShifts').value = shifts;
         document.getElementById('overrideHours').value = hours;
+        document.getElementById('overrideDays').value = days;
         document.getElementById('overrideSaturday').checked = saturday;
         document.getElementById('overrideSunday').checked = sunday;
         updatePreview();
@@ -566,7 +583,7 @@
         document.getElementById('overrideRecurrent').checked = false;
         document.getElementById('overrideRecurrenceWeeks').value = 1;
         document.getElementById('recurrenceOptions').style.display = 'none';
-        applyPreset(3, 8, false, false);
+        applyPreset(3, 8, 5, false, false);
         
         overrideModal.show();
     }
@@ -583,6 +600,7 @@
         document.getElementById('overrideEndDate').value = override.end_date;
         document.getElementById('overrideShifts').value = override.shifts_per_day;
         document.getElementById('overrideHours').value = override.hours_per_shift;
+        document.getElementById('overrideDays').value = override.days_per_week || 5;
         document.getElementById('overrideSaturday').checked = override.include_saturday;
         document.getElementById('overrideSunday').checked = override.include_sunday;
         document.getElementById('overrideRecurrent').checked = override.is_recurrent || false;
@@ -601,6 +619,7 @@
             end_date: document.getElementById('overrideEndDate').value,
             shifts_per_day: parseInt(document.getElementById('overrideShifts').value),
             hours_per_shift: parseFloat(document.getElementById('overrideHours').value),
+            days_per_week: parseInt(document.getElementById('overrideDays').value),
             include_saturday: document.getElementById('overrideSaturday').checked,
             include_sunday: document.getElementById('overrideSunday').checked,
             reason: document.getElementById('overrideReason').value,

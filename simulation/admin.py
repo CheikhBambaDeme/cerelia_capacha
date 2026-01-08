@@ -4,7 +4,7 @@ Django Admin configuration for Cerelia Simulation
 
 from django.contrib import admin
 from .models import (
-    Site, ProductCategory, ShiftConfiguration, ProductionLine,
+    Site, ShiftConfiguration, ProductionLine,
     Client, Product, LineProductAssignment, DemandForecast,
     SimulationCategory, CustomShiftConfiguration, LineConfigOverride
 )
@@ -16,16 +16,6 @@ class SiteAdmin(admin.ModelAdmin):
     list_filter = ['is_active']
     search_fields = ['code', 'name']
     ordering = ['name']
-
-
-@admin.register(ProductCategory)
-class ProductCategoryAdmin(admin.ModelAdmin):
-    list_display = ['name', 'color_code', 'product_count']
-    search_fields = ['name']
-    
-    def product_count(self, obj):
-        return obj.products.count()
-    product_count.short_description = 'Products'
 
 
 @admin.register(ShiftConfiguration)
@@ -55,10 +45,10 @@ class ClientAdmin(admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ['code', 'name', 'category', 'default_line', 'product_type', 'recipe_type', 'is_active']
-    list_filter = ['category', 'is_active', 'product_type', 'recipe_type', 'material_type', 'packaging_type']
+    list_display = ['code', 'name', 'default_line', 'product_type', 'recipe_type', 'is_active']
+    list_filter = ['is_active', 'product_type', 'recipe_type', 'material_type', 'packaging_type']
     search_fields = ['code', 'name', 'product_type', 'recipe_type']
-    autocomplete_fields = ['category', 'default_line']
+    autocomplete_fields = ['default_line']
 
 
 @admin.register(LineProductAssignment)
@@ -73,7 +63,7 @@ class LineProductAssignmentAdmin(admin.ModelAdmin):
 class DemandForecastAdmin(admin.ModelAdmin):
     list_display = ['client', 'product', 'year', 'week_number', 'week_start_date', 
                     'forecast_quantity']
-    list_filter = ['year', 'client', 'product__category']
+    list_filter = ['year', 'client']
     search_fields = ['client__name', 'product__code', 'product__name']
     autocomplete_fields = ['client', 'product']
     date_hierarchy = 'week_start_date'

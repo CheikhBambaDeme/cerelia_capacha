@@ -4,7 +4,7 @@ Django REST Framework Serializers for Cerelia Simulation
 
 from rest_framework import serializers
 from .models import (
-    Site, ProductCategory, ShiftConfiguration, ProductionLine,
+    Site, ShiftConfiguration, ProductionLine,
     Client, Product, LineProductAssignment, DemandForecast, LineConfigOverride,
     LabCategory, LabLine, LabClient, LabProduct, LabForecast,
     SimulationCategory, CustomShiftConfiguration
@@ -15,17 +15,6 @@ class SiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Site
         fields = ['id', 'name', 'code', 'is_active']
-
-
-class ProductCategorySerializer(serializers.ModelSerializer):
-    product_count = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = ProductCategory
-        fields = ['id', 'name', 'description', 'color_code', 'product_count']
-    
-    def get_product_count(self, obj):
-        return obj.products.count()
 
 
 class ShiftConfigurationSerializer(serializers.ModelSerializer):
@@ -70,7 +59,7 @@ class LineConfigOverrideSerializer(serializers.ModelSerializer):
     class Meta:
         model = LineConfigOverride
         fields = ['id', 'line', 'line_name', 'site_name', 'start_date', 'end_date',
-                  'shifts_per_day', 'hours_per_shift', 'include_saturday', 
+                  'shifts_per_day', 'hours_per_shift', 'days_per_week', 'include_saturday', 
                   'include_sunday', 'reason', 'is_recurrent', 'recurrence_weeks', 'is_active', 'config_display', 
                   'weekly_hours', 'created_at']
 
@@ -82,13 +71,11 @@ class ClientSerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
-    category_name = serializers.CharField(source='category.name', read_only=True)
     default_line_name = serializers.CharField(source='default_line.name', read_only=True)
     
     class Meta:
         model = Product
-        fields = ['id', 'code', 'name', 'category', 'category_name', 
-                  'default_line', 'default_line_name', 'unit_weight', 'is_active',
+        fields = ['id', 'code', 'name', 'default_line', 'default_line_name', 'unit_weight', 'is_active',
                   'product_type', 'recipe_type', 'material_type', 'packaging_type']
 
 
@@ -247,7 +234,7 @@ class LabProductSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = LabProduct
-        fields = ['id', 'name', 'code', 'category', 'lab_category', 
+        fields = ['id', 'name', 'code', 'lab_category', 
                   'category_name', 'default_line', 'lab_default_line', 
                   'default_line_name', 'created_at', 'updated_at']
         read_only_fields = ['code', 'created_at', 'updated_at']

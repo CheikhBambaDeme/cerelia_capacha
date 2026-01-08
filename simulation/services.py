@@ -10,7 +10,7 @@ from django.db.models import Sum, Q, Prefetch
 from functools import lru_cache
 from .models import (
     ProductionLine, ShiftConfiguration, Product, Client,
-    ProductCategory, DemandForecast, LineProductAssignment,
+    DemandForecast, LineProductAssignment,
     LabLine, LabForecast, LabProduct, LineConfigOverride,
     LabClient, LabCategory
 )
@@ -122,6 +122,7 @@ def _get_config_for_date_from_prefetched(line, target_date, prefetched_overrides
                 'override': override,
                 'shifts_per_day': override.shifts_per_day,
                 'hours_per_shift': float(override.hours_per_shift),
+                'days_per_week': override.days_per_week,
                 'include_saturday': override.include_saturday,
                 'include_sunday': override.include_sunday,
                 'weekly_hours': override.weekly_hours,
@@ -135,6 +136,7 @@ def _get_config_for_date_from_prefetched(line, target_date, prefetched_overrides
             'override': None,
             'shifts_per_day': line.default_shift_config.shifts_per_day,
             'hours_per_shift': float(line.default_shift_config.hours_per_shift),
+            'days_per_week': 5 + (1 if line.default_shift_config.includes_saturday else 0) + (1 if line.default_shift_config.includes_sunday else 0),
             'include_saturday': line.default_shift_config.includes_saturday,
             'include_sunday': line.default_shift_config.includes_sunday,
             'weekly_hours': line.default_shift_config.weekly_hours,
@@ -734,10 +736,6 @@ def run_line_simulation(line_ids: list, shift_configs: list,
         overlay_data['client_codes'] = client_codes
     if product_code:
         overlay_data['product_code'] = product_code
-    if category_id:
-        category = ProductCategory.objects.filter(id=category_id).first()
-        if category:
-            overlay_data['category_name'] = category.name
     if demand_modifications:
         overlay_data['demand_modifications'] = demand_modifications
     
@@ -1554,10 +1552,6 @@ def run_lab_simulation(line_ids: list, lab_line_ids: list,
         overlay_data['client_codes'] = client_codes
     if product_code:
         overlay_data['product_code'] = product_code
-    if category_id:
-        category = ProductCategory.objects.filter(id=category_id).first()
-        if category:
-            overlay_data['category_name'] = category.name
     # Add lab filters to overlay data
     if lab_client_id:
         lab_client = LabClient.objects.filter(id=lab_client_id).first()

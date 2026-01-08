@@ -110,13 +110,6 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label" style="color: #ea6d09; font-weight: bold;">Filter by Category</label>
-                    <select class="form-select" id="categoryFilter">
-                        <option value="">All Categories</option>
-                    </select>
-                </div>
-
-                <div class="mb-3">
                     <label class="form-label" style="color: #5e3e2f; font-weight: bold;">Filter by Product (code)</label>
                     <input type="text" class="form-control" id="productFilter" list="productDatalist" placeholder="Enter product code">
                     <datalist id="productDatalist"></datalist>
@@ -475,7 +468,6 @@
         await Promise.all([
             loadLines(),
             loadClients(),
-            loadCategories(),
             loadSimulationCategories(),
             loadShiftConfigs(),
             loadAllProducts()
@@ -483,7 +475,6 @@
 
         // Setup event listeners
         document.getElementById('lineSelect').addEventListener('change', updateShiftConfigUI);
-        document.getElementById('categoryFilter').addEventListener('change', loadProductsByCategory);
         document.getElementById('simulationCategorySelect').addEventListener('change', onSimulationCategoryChange);
         
         // Setup modification client change listener
@@ -561,14 +552,6 @@
                 allProducts.map(p => `<option value="${p.id}" data-code="${p.code}">${p.code} - ${p.name}</option>`).join('');
             productSelect.disabled = false;
         }
-    }
-
-    async function loadCategories() {
-        const data = await fetchAPI('categories/');
-        const categories = data.results || data;
-        const select = document.getElementById('categoryFilter');
-        select.innerHTML = '<option value="">All Categories</option>' + 
-            categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
     }
 
     let simulationCategories = [];  // Store simulation categories
@@ -649,18 +632,6 @@
     async function loadShiftConfigs() {
         const data = await fetchAPI('shift-configs/');
         shiftConfigs = data.results || data;
-    }
-
-    async function loadProductsByCategory() {
-        const categoryId = document.getElementById('categoryFilter').value;
-        const datalist = document.getElementById('productDatalist');
-        if (!categoryId) {
-            datalist.innerHTML = '';
-            return;
-        }
-        const data = await fetchAPI(`products/by_category/?category_id=${categoryId}`);
-        const products = data.results || data;
-        datalist.innerHTML = products.map(p => `<option value="${p.code}">${p.code} - ${p.name}</option>`).join('');
     }
 
     function updateShiftConfigUI() {
@@ -817,7 +788,6 @@
                         start_date: document.getElementById('startDate').value,
                         end_date: document.getElementById('endDate').value,
                         client_codes: clientCodes.length > 0 ? clientCodes : null,
-                        category_id: document.getElementById('categoryFilter').value || null,
                         product_code: productCode || null,
                         overlay_client_codes: overlayClients.map(c => c.code),
                         granularity: 'week',

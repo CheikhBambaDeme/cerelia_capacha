@@ -9,13 +9,13 @@ from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 
 from .models import (
-    Site, ProductCategory, ShiftConfiguration, ProductionLine,
+    Site, ShiftConfiguration, ProductionLine,
     Client, Product, LineProductAssignment, DemandForecast, LineConfigOverride,
     LabCategory, LabLine, LabClient, LabProduct, LabForecast,
     SimulationCategory, CustomShiftConfiguration
 )
 from .serializers import (
-    SiteSerializer, ProductCategorySerializer, ShiftConfigurationSerializer,
+    SiteSerializer, ShiftConfigurationSerializer,
     ProductionLineSerializer, ClientSerializer, ProductSerializer,
     LineProductAssignmentSerializer, DemandForecastSerializer,
     LineSimulationRequestSerializer,
@@ -111,12 +111,6 @@ class SiteViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'code']
 
 
-class ProductCategoryViewSet(viewsets.ModelViewSet):
-    queryset = ProductCategory.objects.all()
-    serializer_class = ProductCategorySerializer
-    search_fields = ['name']
-
-
 class ShiftConfigurationViewSet(viewsets.ModelViewSet):
     queryset = ShiftConfiguration.objects.all()
     serializer_class = ShiftConfigurationSerializer
@@ -150,31 +144,19 @@ class ClientViewSet(viewsets.ModelViewSet):
 
 
 class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.filter(is_active=True).select_related('category', 'default_line')
+    queryset = Product.objects.filter(is_active=True).select_related('default_line')
     serializer_class = ProductSerializer
-    filterset_fields = ['category', 'is_active']
-    search_fields = ['code', 'name']
+    filterset_fields = ['is_active']
+    search_fields = ['code', 'name', 'product_type', 'recipe_type']
     
-    @action(detail=False, methods=['get'])
-    def by_category(self, request):
-        """Get products filtered by category"""
-        category_id = request.query_params.get('category_id')
-        if category_id:
-            products = self.queryset.filter(category_id=category_id)
-        else:
-            products = self.queryset.all()
-        serializer = self.get_serializer(products, many=True)
-        return Response(serializer.data)
-
-
 class LineProductAssignmentViewSet(viewsets.ModelViewSet):
-    queryset = LineProductAssignment.objects.select_related('line', 'product', 'product__category')
+    queryset = LineProductAssignment.objects.select_related('line', 'product')
     serializer_class = LineProductAssignmentSerializer
     filterset_fields = ['line', 'product', 'is_default']
 
 
 class DemandForecastViewSet(viewsets.ModelViewSet):
-    queryset = DemandForecast.objects.select_related('client', 'product', 'product__category')
+    queryset = DemandForecast.objects.select_related('client', 'product')
     serializer_class = DemandForecastSerializer
     filterset_fields = ['client', 'product', 'year', 'week_number']
     
