@@ -5,7 +5,8 @@ Django Admin configuration for Cerelia Simulation
 from django.contrib import admin
 from .models import (
     Site, ProductCategory, ShiftConfiguration, ProductionLine,
-    Client, Product, LineProductAssignment, DemandForecast
+    Client, Product, LineProductAssignment, DemandForecast,
+    SimulationCategory, CustomShiftConfiguration, LineConfigOverride
 )
 
 
@@ -54,9 +55,9 @@ class ClientAdmin(admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ['code', 'name', 'category', 'default_line', 'is_active']
-    list_filter = ['category', 'is_active']
-    search_fields = ['code', 'name']
+    list_display = ['code', 'name', 'category', 'default_line', 'product_type', 'recipe_type', 'is_active']
+    list_filter = ['category', 'is_active', 'product_type', 'recipe_type', 'material_type', 'packaging_type']
+    search_fields = ['code', 'name', 'product_type', 'recipe_type']
     autocomplete_fields = ['category', 'default_line']
 
 
@@ -77,3 +78,33 @@ class DemandForecastAdmin(admin.ModelAdmin):
     autocomplete_fields = ['client', 'product']
     date_hierarchy = 'week_start_date'
     ordering = ['-year', '-week_number']
+
+
+@admin.register(SimulationCategory)
+class SimulationCategoryAdmin(admin.ModelAdmin):
+    list_display = ['name', 'site', 'line_count', 'is_active', 'created_at']
+    list_filter = ['is_active', 'site']
+    search_fields = ['name', 'description']
+    filter_horizontal = ['lines']
+    
+    def line_count(self, obj):
+        return obj.lines.count()
+    line_count.short_description = 'Lines'
+
+
+@admin.register(CustomShiftConfiguration)
+class CustomShiftConfigurationAdmin(admin.ModelAdmin):
+    list_display = ['name', 'shifts_per_day', 'hours_per_shift', 'days_per_week',
+                    'includes_saturday', 'includes_sunday', 'weekly_hours']
+    list_filter = ['shifts_per_day', 'days_per_week', 'includes_saturday', 'includes_sunday']
+    search_fields = ['name', 'description']
+
+
+@admin.register(LineConfigOverride)
+class LineConfigOverrideAdmin(admin.ModelAdmin):
+    list_display = ['line', 'start_date', 'end_date', 'config_display', 
+                    'reason', 'is_recurrent', 'is_active']
+    list_filter = ['is_active', 'is_recurrent', 'line__site']
+    search_fields = ['line__name', 'reason']
+    autocomplete_fields = ['line']
+    date_hierarchy = 'start_date'

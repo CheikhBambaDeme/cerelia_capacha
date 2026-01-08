@@ -32,6 +32,31 @@
                 <i class="bi bi-sliders"></i> <span style="color: #ea6d09;">Configuration</span>
             </div>
             <div class="card-body flex-grow-1 overflow-auto" style="min-height: 0;">
+                <!-- Simulation Category Selection -->
+                <div class="mb-3">
+                    <label class="form-label" style="color: #ea6d09; font-weight: bold;">
+                        <i class="bi bi-collection"></i> Simulation Category
+                    </label>
+                    <select class="form-select" id="simulationCategorySelect">
+                        <option value="">-- Select a Category or choose lines manually --</option>
+                    </select>
+                    <small class="text-muted">Select a pre-defined category to auto-populate lines and filters</small>
+                </div>
+
+                <div id="categoryDetails" class="mb-3" style="display: none;">
+                    <div class="card bg-light">
+                        <div class="card-body p-2">
+                            <small class="text-muted">Category filters:</small>
+                            <div id="categoryFiltersInfo" class="small"></div>
+                            <div class="mt-2">
+                                <span class="badge bg-info" id="categoryProductCount">0 matching products</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <hr>
+
                 <!-- Date Range -->
                 <div class="mb-3">
                     <label class="form-label" style="color: #5e3e2f; font-weight: bold;">Date Range</label>
@@ -50,7 +75,7 @@
                     <label class="form-label" style="color: #ea6d09; font-weight: bold;">Production Lines</label>
                     <select class="form-select" id="lineSelect" multiple size="6">
                     </select>
-                    <small class="text-muted">Hold Ctrl to select multiple lines</small>
+                    <small class="text-muted">Hold Ctrl to select multiple lines (auto-filled by category)</small>
                 </div>
 
                 <!-- Shift Configuration per Line -->
@@ -451,6 +476,7 @@
             loadLines(),
             loadClients(),
             loadCategories(),
+            loadSimulationCategories(),
             loadShiftConfigs(),
             loadAllProducts()
         ]);
@@ -458,6 +484,7 @@
         // Setup event listeners
         document.getElementById('lineSelect').addEventListener('change', updateShiftConfigUI);
         document.getElementById('categoryFilter').addEventListener('change', loadProductsByCategory);
+        document.getElementById('simulationCategorySelect').addEventListener('change', onSimulationCategoryChange);
         
         // Setup modification client change listener
         document.getElementById('modClientSelect').addEventListener('change', loadClientProducts);
@@ -542,6 +569,81 @@
         const select = document.getElementById('categoryFilter');
         select.innerHTML = '<option value="">All Categories</option>' + 
             categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    }
+
+    let simulationCategories = [];  // Store simulation categories
+    let selectedSimulationCategory = null;  // Currently selected simulation category
+
+    async function loadSimulationCategories() {
+        try {
+            const data = await fetchAPI('simulation-categories/');
+            simulationCategories = data.results || data;
+            const select = document.getElementById('simulationCategorySelect');
+            select.innerHTML = '<option value="">-- Select a Category or choose lines manually --</option>' + 
+                simulationCategories.map(c => `<option value="${c.id}">${c.name} (${c.matching_products_count} products)</option>`).join('');
+        } catch (error) {
+            console.error('Error loading simulation categories:', error);
+        }
+    }
+
+    async function onSimulationCategoryChange() {
+        const select = document.getElementById('simulationCategorySelect');
+        const categoryId = select.value;
+        const detailsDiv = document.getElementById('categoryDetails');
+        const filtersInfo = document.getElementById('categoryFiltersInfo');
+        const productCountBadge = document.getElementById('categoryProductCount');
+
+        if (!categoryId) {
+            // No category selected, hide details and allow manual selection
+            detailsDiv.style.display = 'none';
+            selectedSimulationCategory = null;
+            return;
+        }
+
+        try {
+            // Load full category details
+            const category = await fetchAPI(`simulation-categories/${categoryId}/`);
+            selectedSimulationCategory = category;
+            
+            // Show category details
+            detailsDiv.style.display = 'block';
+            
+            // Build filters info display
+            let filtersHtml = '';
+            if (category.site_name) {
+                filtersHtml += `<div><i class="bi bi-geo-alt"></i> Site: ${category.site_name}</div>`;
+            }
+            if (category.product_types) {
+                filtersHtml += `<div><i class="bi bi-box"></i> Product Types: ${category.product_types}</div>`;
+            }
+            if (category.recipe_types) {
+                filtersHtml += `<div><i class="bi bi-journal-text"></i> Recipe Types: ${category.recipe_types}</div>`;
+            }
+            if (category.material_types) {
+                filtersHtml += `<div><i class="bi bi-layers"></i> Material Types: ${category.material_types}</div>`;
+            }
+            if (category.packaging_types) {
+                filtersHtml += `<div><i class="bi bi-archive"></i> Packaging Types: ${category.packaging_types}</div>`;
+            }
+            filtersInfo.innerHTML = filtersHtml || '<em>No filters defined</em>';
+            productCountBadge.textContent = `${category.matching_products_count} matching products`;
+
+            // Auto-select the lines from the category
+            const lineSelect = document.getElementById('lineSelect');
+            const lineIds = category.lines_data ? category.lines_data.map(l => l.id) : [];
+            
+            // Select the lines in the dropdown
+            Array.from(lineSelect.options).forEach(option => {
+                option.selected = lineIds.includes(parseInt(option.value));
+            });
+
+            // Trigger shift config update
+            updateShiftConfigUI();
+            
+        } catch (error) {
+            console.error('Error loading category details:', error);
+            detailsDiv.style.display = 'none';
+        }
     }
 
     async function loadShiftConfigs() {
@@ -655,9 +757,10 @@
     async function runSimulation() {
         const lineSelect = document.getElementById('lineSelect');
         const selectedLineIds = Array.from(lineSelect.selectedOptions).map(opt => parseInt(opt.value));
+        const simulationCategoryId = document.getElementById('simulationCategorySelect').value;
     
-        if (selectedLineIds.length === 0) {
-            alert('Please select at least one production line');
+        if (selectedLineIds.length === 0 && !simulationCategoryId) {
+            alert('Please select a simulation category or at least one production line');
             return;
         }
 
@@ -673,6 +776,9 @@
         // Get product code
         const productCode = document.getElementById('productFilter').value.trim();
         
+        // Determine which API endpoint to use
+        const useSimulationCategory = simulationCategoryId && selectedSimulationCategory;
+        
         // Run simulation for each scenario
         try {
             for (const scenarioCard of scenarioCards) {
@@ -686,20 +792,40 @@
                     use_override: select.value === 'override'
                 }));
 
-                const requestData = {
-                    line_ids: selectedLineIds,
-                    shift_configs: lineShiftConfigs,
-                    start_date: document.getElementById('startDate').value,
-                    end_date: document.getElementById('endDate').value,
-                    client_codes: clientCodes.length > 0 ? clientCodes : null,
-                    category_id: document.getElementById('categoryFilter').value || null,
-                    product_code: productCode || null,
-                    overlay_client_codes: overlayClients.map(c => c.code),
-                    granularity: 'week',
-                    demand_modifications: demandModifications.length > 0 ? demandModifications : null
-                };
+                let requestData;
+                let apiEndpoint;
                 
-                const response = await fetch('/api/simulate/line/', {
+                if (useSimulationCategory) {
+                    // Use category-based simulation API
+                    apiEndpoint = '/api/simulate/category/';
+                    requestData = {
+                        simulation_category_id: parseInt(simulationCategoryId),
+                        shift_configs: lineShiftConfigs,
+                        start_date: document.getElementById('startDate').value,
+                        end_date: document.getElementById('endDate').value,
+                        client_codes: clientCodes.length > 0 ? clientCodes : null,
+                        overlay_client_codes: overlayClients.map(c => c.code),
+                        granularity: 'week',
+                        demand_modifications: demandModifications.length > 0 ? demandModifications : null
+                    };
+                } else {
+                    // Use line-based simulation API  
+                    apiEndpoint = '/api/simulate/line/';
+                    requestData = {
+                        line_ids: selectedLineIds,
+                        shift_configs: lineShiftConfigs,
+                        start_date: document.getElementById('startDate').value,
+                        end_date: document.getElementById('endDate').value,
+                        client_codes: clientCodes.length > 0 ? clientCodes : null,
+                        category_id: document.getElementById('categoryFilter').value || null,
+                        product_code: productCode || null,
+                        overlay_client_codes: overlayClients.map(c => c.code),
+                        granularity: 'week',
+                        demand_modifications: demandModifications.length > 0 ? demandModifications : null
+                    };
+                }
+                
+                const response = await fetch(apiEndpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

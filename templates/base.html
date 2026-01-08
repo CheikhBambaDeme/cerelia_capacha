@@ -244,6 +244,18 @@
                         </a>
                     </li>
                     <hr class="text-white-50 mx-3 my-2">
+                    <!-- Categories and Shift Management -->
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'simulation_category' %}active{% endif %}" href="{% url 'simulation_category' %}">
+                            <i class="bi bi-collection"></i> Categories
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'shift_management' %}active{% endif %}" href="{% url 'shift_management' %}">
+                            <i class="bi bi-clock-history"></i> Shift Management
+                        </a>
+                    </li>
+                    <hr class="text-white-50 mx-3 my-2">
                     <li class="nav-item">
                         <a class="nav-link {% if request.resolver_match.url_name == 'line_simulation' %}active{% endif %}" href="{% url 'line_simulation' %}">
                             <i class="bi bi-bar-chart-line"></i> Line Simulation

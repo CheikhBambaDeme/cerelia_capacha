@@ -11,7 +11,8 @@ from rest_framework.response import Response
 from .models import (
     Site, ProductCategory, ShiftConfiguration, ProductionLine,
     Client, Product, LineProductAssignment, DemandForecast, LineConfigOverride,
-    LabCategory, LabLine, LabClient, LabProduct, LabForecast
+    LabCategory, LabLine, LabClient, LabProduct, LabForecast,
+    SimulationCategory, CustomShiftConfiguration
 )
 from .serializers import (
     SiteSerializer, ProductCategorySerializer, ShiftConfigurationSerializer,
@@ -21,12 +22,15 @@ from .serializers import (
     NewClientSimulationRequestSerializer, LostClientSimulationRequestSerializer,
     LineConfigOverrideSerializer,
     LabCategorySerializer, LabLineSerializer, LabClientSerializer,
-    LabProductSerializer, LabForecastSerializer, LabSimulationRequestSerializer
+    LabProductSerializer, LabForecastSerializer, LabSimulationRequestSerializer,
+    SimulationCategorySerializer, CustomShiftConfigurationSerializer,
+    CategorySimulationRequestSerializer
 )
 from .services import (
     run_line_simulation,
     run_new_client_simulation, run_lost_client_simulation,
-    run_lab_simulation, clear_caches
+    run_lab_simulation, clear_caches,
+    run_category_simulation
 )
 
 
@@ -81,6 +85,20 @@ def lab_forecast_view(request):
 def lab_simulation_view(request):
     """Lab Simulation page (combines real and lab data)"""
     return render(request, 'simulation/lab_simulation.html')
+
+
+# =============================================================================
+# Category and Shift Management Template Views
+# =============================================================================
+
+def simulation_category_view(request):
+    """Simulation Category management page"""
+    return render(request, 'simulation/simulation_category.html')
+
+
+def shift_management_view(request):
+    """Custom Shift Configuration management page"""
+    return render(request, 'simulation/shift_management.html')
 
 
 # =============================================================================
@@ -455,6 +473,84 @@ def simulate_lab(request):
         lab_product_code=data.get('lab_product_code'),
         lab_category_id=data.get('lab_category_id'),
         overlay_client_codes=data.get('overlay_client_codes', []),
+        demand_modifications=data.get('demand_modifications')
+    )
+    
+    return Response(result)
+
+
+# =============================================================================
+# Simulation Category API ViewSet
+# =============================================================================
+
+class SimulationCategoryViewSet(viewsets.ModelViewSet):
+    queryset = SimulationCategory.objects.prefetch_related('lines', 'site').all()
+    serializer_class = SimulationCategorySerializer
+    search_fields = ['name', 'description']
+    
+    @action(detail=True, methods=['get'])
+    def matching_products(self, request, pk=None):
+        """Get products matching this category's filters"""
+        category = self.get_object()
+        products = category.get_matching_products()
+        return Response(ProductSerializer(products, many=True).data)
+    
+    @action(detail=True, methods=['get'])
+    def lines(self, request, pk=None):
+        """Get lines for this category"""
+        category = self.get_object()
+        lines = category.lines.all()
+        return Response(ProductionLineSerializer(lines, many=True).data)
+    
+    @action(detail=False, methods=['get'])
+    def product_attributes(self, request):
+        """Get distinct product attribute values for filtering"""
+        products = Product.objects.filter(is_active=True)
+        return Response({
+            'product_types': list(products.exclude(product_type='').values_list('product_type', flat=True).distinct().order_by('product_type')),
+            'recipe_types': list(products.exclude(recipe_type='').values_list('recipe_type', flat=True).distinct().order_by('recipe_type')),
+            'material_types': list(products.exclude(material_type='').values_list('material_type', flat=True).distinct().order_by('material_type')),
+            'packaging_types': list(products.exclude(packaging_type='').values_list('packaging_type', flat=True).distinct().order_by('packaging_type')),
+        })
+
+
+# =============================================================================
+# Custom Shift Configuration API ViewSet
+# =============================================================================
+
+class CustomShiftConfigurationViewSet(viewsets.ModelViewSet):
+    queryset = CustomShiftConfiguration.objects.all()
+    serializer_class = CustomShiftConfigurationSerializer
+    search_fields = ['name', 'description']
+
+
+# =============================================================================
+# Category Simulation API Endpoint
+# =============================================================================
+
+@api_view(['POST'])
+def simulate_category(request):
+    """
+    Category-based Simulation API (new workflow)
+    Uses simulation categories to filter lines and products
+    """
+    clear_caches()
+    
+    serializer = CategorySimulationRequestSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    data = serializer.validated_data
+    
+    result = run_category_simulation(
+        simulation_category_id=data['simulation_category_id'],
+        shift_configs=data['shift_configs'],
+        start_date=data['start_date'],
+        end_date=data['end_date'],
+        client_codes=data.get('client_codes'),
+        product_code=data.get('product_code'),
+        overlay_client_codes=data.get('overlay_client_codes', []),
+        granularity=data.get('granularity', 'week'),
         demand_modifications=data.get('demand_modifications')
     )
     

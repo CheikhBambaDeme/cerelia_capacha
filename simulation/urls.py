@@ -25,11 +25,19 @@ router.register(r'lab/clients', views.LabClientViewSet)
 router.register(r'lab/products', views.LabProductViewSet)
 router.register(r'lab/forecasts', views.LabForecastViewSet)
 
+# Simulation Category and Custom Shift Config API Router
+router.register(r'simulation-categories', views.SimulationCategoryViewSet)
+router.register(r'custom-shift-configs', views.CustomShiftConfigurationViewSet)
+
 urlpatterns = [
     # Template views (Dashboard pages)
     path('', views.dashboard_home, name='dashboard_home'),
     path('line-simulation/', views.line_simulation_view, name='line_simulation'),
     path('line-configuration/', views.line_configuration_view, name='line_configuration'),
+    
+    # New Category and Shift Management views
+    path('categories/', views.simulation_category_view, name='simulation_category'),
+    path('shift-management/', views.shift_management_view, name='shift_management'),
     
     # Lab template views
     path('lab/line/', views.lab_line_view, name='lab_line'),
@@ -44,6 +52,7 @@ urlpatterns = [
     
     # Simulation API endpoints
     path('api/simulate/line/', views.simulate_line, name='api_simulate_line'),
+    path('api/simulate/category/', views.simulate_category, name='api_simulate_category'),
     path('api/simulate/new-client/', views.simulate_new_client, name='api_simulate_new_client'),
     path('api/simulate/lost-client/', views.simulate_lost_client, name='api_simulate_lost_client'),
     path('api/simulate/lab/', views.simulate_lab, name='api_simulate_lab'),
