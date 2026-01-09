@@ -139,15 +139,27 @@ class ProductionLineViewSet(viewsets.ModelViewSet):
 class ClientViewSet(viewsets.ModelViewSet):
     queryset = Client.objects.filter(is_active=True)
     serializer_class = ClientSerializer
-    filterset_fields = ['is_active', 'code']
     search_fields = ['name', 'code']
+    
+    def get_queryset(self):
+        queryset = Client.objects.filter(is_active=True)
+        code = self.request.query_params.get('code')
+        if code:
+            queryset = queryset.filter(code__iexact=code)
+        return queryset
 
 
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.filter(is_active=True).select_related('default_line')
     serializer_class = ProductSerializer
-    filterset_fields = ['is_active']
     search_fields = ['code', 'name', 'product_type', 'recipe_type']
+    
+    def get_queryset(self):
+        queryset = Product.objects.filter(is_active=True).select_related('default_line')
+        code = self.request.query_params.get('code')
+        if code:
+            queryset = queryset.filter(code__iexact=code)
+        return queryset
     
 class LineProductAssignmentViewSet(viewsets.ModelViewSet):
     queryset = LineProductAssignment.objects.select_related('line', 'product')
@@ -270,6 +282,7 @@ def simulate_line(request):
         client_codes=data.get('client_codes'),
         category_id=data.get('category_id'),
         product_code=data.get('product_code'),
+        product_codes=data.get('product_codes'),
         overlay_client_codes=data.get('overlay_client_codes', []),
         granularity=data.get('granularity', 'week'),
         demand_modifications=data.get('demand_modifications')
@@ -531,6 +544,7 @@ def simulate_category(request):
         end_date=data['end_date'],
         client_codes=data.get('client_codes'),
         product_code=data.get('product_code'),
+        product_codes=data.get('product_codes'),
         overlay_client_codes=data.get('overlay_client_codes', []),
         granularity=data.get('granularity', 'week'),
         demand_modifications=data.get('demand_modifications')

@@ -132,6 +132,11 @@ class LineSimulationRequestSerializer(serializers.Serializer):
         allow_null=True
     )
     product_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    product_codes = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=False,
+        allow_null=True
+    )
     category_id = serializers.IntegerField(required=False, allow_null=True)
     overlay_client_codes = serializers.ListField(
         child=serializers.CharField(max_length=20),
@@ -368,6 +373,11 @@ class CategorySimulationRequestSerializer(serializers.Serializer):
         allow_null=True
     )
     product_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    product_codes = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=False,
+        allow_null=True
+    )
     overlay_client_codes = serializers.ListField(
         child=serializers.CharField(max_length=20),
         required=False,

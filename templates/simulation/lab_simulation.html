@@ -429,7 +429,7 @@ function addClientOverlay() {
     if (!code) return;
     
     // Check if client exists
-    const client = clients.find(c => c.code.toUpperCase() === code);
+    const client = clients.find(c => c.code.toUpperCase() === code.toUpperCase());
     if (!client) {
         alert(`Client with code "${code}" not found`);
         return;

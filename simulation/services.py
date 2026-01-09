@@ -678,6 +678,7 @@ def run_line_simulation(line_ids: list, shift_configs: list,
                         client_codes: list = None,
                         category_id: Optional[int] = None,
                         product_code: str = None,
+                        product_codes: list = None,
                         overlay_client_codes: list = None,
                         granularity: str = 'week',
                         demand_modifications: list = None) -> dict:
@@ -694,12 +695,20 @@ def run_line_simulation(line_ids: list, shift_configs: list,
     if demand_modifications is None:
         demand_modifications = []
 
-    # Resolve product_id from product_code if provided
-    product_id = None
-    if product_code:
+    # Resolve product_ids from product_codes or single product_code
+    product_ids = []
+    if product_codes:
+        for code in product_codes:
+            product = Product.objects.filter(code__iexact=code).first()
+            if product:
+                product_ids.append(product.id)
+    elif product_code:
         product = Product.objects.filter(code__iexact=product_code).first()
         if product:
-            product_id = product.id
+            product_ids.append(product.id)
+    
+    # For backward compatibility - single product_id
+    product_id = product_ids[0] if len(product_ids) == 1 else None
 
     # Resolve client_ids from client_codes if provided
     client_ids = []
@@ -734,7 +743,9 @@ def run_line_simulation(line_ids: list, shift_configs: list,
 
     if client_ids:
         overlay_data['client_codes'] = client_codes
-    if product_code:
+    if product_codes:
+        overlay_data['product_codes'] = product_codes
+    elif product_code:
         overlay_data['product_code'] = product_code
     if demand_modifications:
         overlay_data['demand_modifications'] = demand_modifications
@@ -746,7 +757,8 @@ def run_line_simulation(line_ids: list, shift_configs: list,
             client_id, category_id, product_id,
             overlay_client_codes, overlay_data,
             combine_clients=combine_clients, client_ids=client_ids,
-            demand_modifications=demand_modifications
+            demand_modifications=demand_modifications,
+            product_ids=product_ids
         )
     else:
         return _run_line_simulation_weekly(
@@ -754,7 +766,8 @@ def run_line_simulation(line_ids: list, shift_configs: list,
             client_id, category_id, product_id,
             overlay_client_codes, overlay_data,
             combine_clients=combine_clients, client_ids=client_ids,
-            demand_modifications=demand_modifications
+            demand_modifications=demand_modifications,
+            product_ids=product_ids
         )
 
 
@@ -762,8 +775,12 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
                                  client_id, category_id, product_id,
                                  overlay_client_codes, overlay_data,
                                  combine_clients=False, client_ids=None,
-                                 demand_modifications=None):
+                                 demand_modifications=None,
+                                 product_ids=None):
     """Weekly granularity simulation. Optimized with batch loading."""
+    if product_ids is None:
+        product_ids = []
+    
     # Get weeks in range
     weeks = get_weeks_in_range(start_date, end_date)
     
@@ -773,8 +790,25 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
     # Calculate capacity per week (considers overrides)
     capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks)
     
-    # Get demand data
-    if combine_clients and client_ids:
+    # Get demand data - handle multiple product_ids
+    if len(product_ids) > 1:
+        # Sum demand for all product_ids
+        demand_data = {}
+        for pid in product_ids:
+            if combine_clients and client_ids:
+                for cid in client_ids:
+                    product_demand = get_demand_for_lines(
+                        line_ids, start_date, end_date, cid, category_id, pid
+                    )
+                    for week, val in product_demand.items():
+                        demand_data[week] = demand_data.get(week, Decimal('0')) + val
+            else:
+                product_demand = get_demand_for_lines(
+                    line_ids, start_date, end_date, client_id, category_id, pid
+                )
+                for week, val in product_demand.items():
+                    demand_data[week] = demand_data.get(week, Decimal('0')) + val
+    elif combine_clients and client_ids:
         # Sum demand for all client_ids
         demand_data = {}
         for cid in client_ids:
@@ -910,8 +944,12 @@ def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
                                 client_id, category_id, product_id,
                                 overlay_client_codes, overlay_data,
                                 combine_clients=False, client_ids=None,
-                                demand_modifications=None):
+                                demand_modifications=None,
+                                product_ids=None):
     """Daily granularity simulation. Optimized with batch loading."""
+    if product_ids is None:
+        product_ids = []
+    
     # Get days in range
     days = get_days_in_range(start_date, end_date)
     
@@ -921,8 +959,24 @@ def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
     # Calculate capacity per day (considers overrides)
     capacity_by_day = calculate_capacity_per_day(line_ids, config_dict, days)
     
-    # Get demand data (distributed daily)
-    if combine_clients and client_ids:
+    # Get demand data (distributed daily) - handle multiple product_ids
+    if len(product_ids) > 1:
+        demand_data = {}
+        for pid in product_ids:
+            if combine_clients and client_ids:
+                for cid in client_ids:
+                    product_demand = get_demand_for_lines_daily(
+                        line_ids, start_date, end_date, cid, category_id, pid
+                    )
+                    for day, val in product_demand.items():
+                        demand_data[day] = demand_data.get(day, Decimal('0')) + val
+            else:
+                product_demand = get_demand_for_lines_daily(
+                    line_ids, start_date, end_date, client_id, category_id, pid
+                )
+                for day, val in product_demand.items():
+                    demand_data[day] = demand_data.get(day, Decimal('0')) + val
+    elif combine_clients and client_ids:
         demand_data = {}
         for cid in client_ids:
             client_demand = get_demand_for_lines_daily(
@@ -1659,6 +1713,7 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
                              start_date, end_date,
                              client_codes: list = None,
                              product_code: str = None,
+                             product_codes: list = None,
                              overlay_client_codes: list = None,
                              granularity: str = 'week',
                              demand_modifications: list = None) -> dict:
@@ -1673,6 +1728,7 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
         end_date: End date for simulation
         client_codes: Optional filter by client codes (must be in category's scope)
         product_code: Optional filter by product code (must match category's product filters)
+        product_codes: Optional filter by multiple product codes (must match category's product filters)
         overlay_client_codes: Client codes for overlay curves
         granularity: 'week' or 'day'
         demand_modifications: List of demand adjustments
@@ -1700,17 +1756,26 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
     if not matching_product_ids:
         return {'error': 'No products match the category filters'}
     
-    # Resolve product_id from product_code if provided (must be in matching products)
-    product_id = None
-    if product_code:
+    # Resolve product_ids from product_codes or single product_code (must be in matching products)
+    product_ids = []
+    if product_codes:
+        for code in product_codes:
+            product = Product.objects.filter(
+                code__iexact=code,
+                id__in=matching_product_ids
+            ).first()
+            if product:
+                product_ids.append(product.id)
+    elif product_code:
         product = Product.objects.filter(
             code__iexact=product_code,
             id__in=matching_product_ids
         ).first()
         if product:
-            product_id = product.id
-        else:
-            return {'error': f'Product {product_code} not found or not in category scope'}
+            product_ids.append(product.id)
+    
+    # For backward compatibility - single product_id
+    product_id = product_ids[0] if len(product_ids) == 1 else None
     
     # Resolve client_ids from client_codes if provided
     client_ids = []
@@ -1743,7 +1808,9 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
     }
     if client_codes:
         overlay_data['client_codes'] = client_codes
-    if product_code:
+    if product_codes:
+        overlay_data['product_codes'] = product_codes
+    elif product_code:
         overlay_data['product_code'] = product_code
     if demand_modifications:
         overlay_data['demand_modifications'] = demand_modifications
@@ -1755,7 +1822,8 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
             matching_product_ids, client_id, product_id,
             overlay_client_codes or [], overlay_data,
             combine_clients=combine_clients, client_ids=client_ids,
-            demand_modifications=demand_modifications or []
+            demand_modifications=demand_modifications or [],
+            product_ids=product_ids
         )
     else:
         return _run_category_simulation_weekly(
@@ -1763,7 +1831,8 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
             matching_product_ids, client_id, product_id,
             overlay_client_codes or [], overlay_data,
             combine_clients=combine_clients, client_ids=client_ids,
-            demand_modifications=demand_modifications or []
+            demand_modifications=demand_modifications or [],
+            product_ids=product_ids
         )
 
 
@@ -1794,16 +1863,24 @@ def _run_category_simulation_weekly(line_ids, config_dict, start_date, end_date,
                                      matching_product_ids, client_id, product_id,
                                      overlay_client_codes, overlay_data,
                                      combine_clients=False, client_ids=None,
-                                     demand_modifications=None):
+                                     demand_modifications=None,
+                                     product_ids=None):
     """Weekly granularity simulation for category-based workflow."""
+    if product_ids is None:
+        product_ids = []
+    
     weeks = get_weeks_in_range(start_date, end_date)
     
     lines_dict = _get_lines_with_configs(line_ids, start_date, end_date + timedelta(days=6))
     capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks)
     
-    query_product_ids = matching_product_ids
-    if product_id:
+    # Determine which product IDs to query
+    if len(product_ids) > 1:
+        query_product_ids = set(product_ids)
+    elif product_id:
         query_product_ids = {product_id}
+    else:
+        query_product_ids = matching_product_ids
     
     # Get demand data
     if combine_clients and client_ids:
@@ -1924,16 +2001,24 @@ def _run_category_simulation_daily(line_ids, config_dict, start_date, end_date,
                                     matching_product_ids, client_id, product_id,
                                     overlay_client_codes, overlay_data,
                                     combine_clients=False, client_ids=None,
-                                    demand_modifications=None):
+                                    demand_modifications=None,
+                                    product_ids=None):
     """Daily granularity simulation for category-based workflow."""
+    if product_ids is None:
+        product_ids = []
+    
     days = get_days_in_range(start_date, end_date)
     
     lines_dict = _get_lines_with_configs(line_ids, start_date, end_date)
     capacity_by_day = calculate_capacity_per_day(line_ids, config_dict, days)
     
-    query_product_ids = matching_product_ids
-    if product_id:
+    # Determine which product IDs to query
+    if len(product_ids) > 1:
+        query_product_ids = set(product_ids)
+    elif product_id:
         query_product_ids = {product_id}
+    else:
+        query_product_ids = matching_product_ids
     
     if combine_clients and client_ids:
         weekly_demand_data = {}

@@ -104,15 +104,31 @@
                 <h6 style="color: #ea6d09; font-weight: bold;"><i class="bi bi-funnel"></i> Optional Filters</h6>
                 
                 <div class="mb-3">
-                    <label class="form-label" style="color: #5e3e2f; font-weight: bold;">Filter by Client (codes, comma-separated)</label>
-                    <input type="text" class="form-control" id="clientFilter" list="clientDatalist" placeholder="Enter client code(s), e.g. C001,C002">
+                    <label class="form-label" style="color: #5e3e2f; font-weight: bold;">Filter by Client</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="clientFilterInput" list="clientDatalist" placeholder="Enter client code">
+                        <button class="btn btn-outline-secondary" type="button" onclick="addClientFilter()">
+                            <i class="bi bi-plus"></i>
+                        </button>
+                    </div>
                     <datalist id="clientDatalist"></datalist>
+                    <div id="clientFilterList" class="mt-2">
+                        <!-- Client filter tags will appear here -->
+                    </div>
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label" style="color: #5e3e2f; font-weight: bold;">Filter by Product (code)</label>
-                    <input type="text" class="form-control" id="productFilter" list="productDatalist" placeholder="Enter product code">
+                    <label class="form-label" style="color: #5e3e2f; font-weight: bold;">Filter by Product</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="productFilterInput" list="productDatalist" placeholder="Enter product code">
+                        <button class="btn btn-outline-secondary" type="button" onclick="addProductFilter()">
+                            <i class="bi bi-plus"></i>
+                        </button>
+                    </div>
                     <datalist id="productDatalist"></datalist>
+                    <div id="productFilterList" class="mt-2">
+                        <!-- Product filter tags will appear here -->
+                    </div>
                 </div>
 
                 <hr>
@@ -443,6 +459,8 @@
     let editingSuperChillId = null;  // Track if we're editing an existing super chill adjustment
     let frozenAdjustments = [];  // Store frozen adjustments (unlimited weeks)
     let editingFrozenId = null;  // Track if we're editing an existing frozen adjustment
+    let filterClients = [];  // Store client codes for filtering
+    let filterProducts = [];  // Store product codes for filtering
     
     // Colors for overlay curves
     const overlayColors = [
@@ -486,6 +504,22 @@
                 addClientOverlay();
             }
         });
+        
+        // Handle Enter key for client filter input
+        document.getElementById('clientFilterInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addClientFilter();
+            }
+        });
+        
+        // Handle Enter key for product filter input
+        document.getElementById('productFilterInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addProductFilter();
+            }
+        });
     });
 
     async function loadLines() {
@@ -520,6 +554,10 @@
     async function loadAllProducts() {
         const data = await fetchAPI('products/');
         allProducts = data.results || data;
+        
+        // Also populate product datalist for filter
+        const datalist = document.getElementById('productDatalist');
+        datalist.innerHTML = allProducts.map(p => `<option value="${p.code}">${p.code} - ${p.name}</option>`).join('');
     }
     
     async function loadClientProducts() {
@@ -648,15 +686,28 @@
         // Update each scenario's shift config UI
         document.querySelectorAll('.shift-config-container').forEach(container => {
             const scenarioId = container.dataset.scenarioId;
+            
+            // Preserve existing selections for this scenario
+            const existingSelections = {};
+            container.querySelectorAll('select[data-line-id]').forEach(select => {
+                existingSelections[select.dataset.lineId] = select.value;
+            });
+            
             container.innerHTML = selectedOptions.map(opt => {
                 const line = allLines.find(l => l.id == opt.value);
                 const hasOverrides = line && line.active_overrides_count > 0;
+                // Check if we have an existing selection for this line in this scenario
+                const existingValue = existingSelections[opt.value];
+                
                 return `
                     <div class="mb-2">
                         <label class="form-label small">${line ? line.name : 'Line'} ${hasOverrides ? '<span class="badge bg-warning text-dark"><i class="bi bi-wrench"></i> Has Overrides</span>' : ''}</label>
                         <select class="form-select form-select-sm" data-line-id="${opt.value}" data-scenario-id="${scenarioId}">
-                            <option value="override" ${hasOverrides ? 'selected' : ''}>🔧 Use Override Config (date-based)</option>
-                            ${shiftConfigs.map(sc => `<option value="${sc.id}" ${!hasOverrides && line && line.default_shift_config == sc.id ? 'selected' : ''}>${sc.name}</option>`).join('')}
+                            <option value="override" ${existingValue === 'override' || (!existingValue && hasOverrides) ? 'selected' : ''}>🔧 Use Override Config (date-based)</option>
+                            ${shiftConfigs.map(sc => {
+                                const isSelected = existingValue ? existingValue == sc.id : (!hasOverrides && line && line.default_shift_config == sc.id);
+                                return `<option value="${sc.id}" ${isSelected ? 'selected' : ''}>${sc.name}</option>`;
+                            }).join('')}
                         </select>
                     </div>
                 `;
@@ -741,11 +792,10 @@
         // Get all scenarios
         const scenarioCards = document.querySelectorAll('.scenario-card');
         
-        // Get client codes (multi, comma-separated)
-        const clientCodesRaw = document.getElementById('clientFilter').value.trim();
-        const clientCodes = clientCodesRaw ? clientCodesRaw.split(',').map(c => c.trim()).filter(Boolean) : [];
-        // Get product code
-        const productCode = document.getElementById('productFilter').value.trim();
+        // Get client codes from filter tags
+        const clientCodes = filterClients.map(c => c.code);
+        // Get product codes from filter tags
+        const productCodes = filterProducts.map(p => p.code);
         
         // Determine which API endpoint to use
         const useSimulationCategory = simulationCategoryId && selectedSimulationCategory;
@@ -775,6 +825,7 @@
                         start_date: document.getElementById('startDate').value,
                         end_date: document.getElementById('endDate').value,
                         client_codes: clientCodes.length > 0 ? clientCodes : null,
+                        product_codes: productCodes.length > 0 ? productCodes : null,
                         overlay_client_codes: overlayClients.map(c => c.code),
                         granularity: 'week',
                         demand_modifications: demandModifications.length > 0 ? demandModifications : null
@@ -788,7 +839,7 @@
                         start_date: document.getElementById('startDate').value,
                         end_date: document.getElementById('endDate').value,
                         client_codes: clientCodes.length > 0 ? clientCodes : null,
-                        product_code: productCode || null,
+                        product_codes: productCodes.length > 0 ? productCodes : null,
                         overlay_client_codes: overlayClients.map(c => c.code),
                         granularity: 'week',
                         demand_modifications: demandModifications.length > 0 ? demandModifications : null
@@ -835,7 +886,7 @@
         }
         
         // Check if already added
-        if (overlayClients.some(c => c.code === code)) {
+        if (overlayClients.some(c => c.code.toUpperCase() === code.toUpperCase())) {
             alert('Client code already added');
             input.value = '';
             return;
@@ -845,7 +896,7 @@
         try {
             const data = await fetchAPI(`clients/?code=${code}`);
             const clients = data.results || data;
-            const client = clients.find(c => c.code.toUpperCase() === code);
+            const client = clients.find(c => c.code.toUpperCase() === code.toUpperCase());
             
             if (!client) {
                 alert(`Client with code "${code}" not found`);
@@ -887,6 +938,134 @@
             <span class="badge me-1 mb-1" style="background-color: ${client.color}; cursor: pointer;" 
                   onclick="removeClientOverlay('${client.code}')" title="Click to remove">
                 ${client.code} - ${client.name} <i class="bi bi-x"></i>
+            </span>
+        `).join('');
+    }
+
+    // Client filter management functions (similar to client overlays)
+    async function addClientFilter() {
+        const input = document.getElementById('clientFilterInput');
+        const code = input.value.trim().toUpperCase();
+        
+        if (!code) {
+            return;
+        }
+        
+        // Check if already added
+        if (filterClients.some(c => c.code.toUpperCase() === code.toUpperCase())) {
+            alert('Client code already added to filter');
+            input.value = '';
+            return;
+        }
+        
+        // Verify client exists
+        try {
+            const data = await fetchAPI(`clients/?code=${code}`);
+            const clients = data.results || data;
+            const client = clients.find(c => c.code.toUpperCase() === code.toUpperCase());
+            
+            if (!client) {
+                alert(`Client with code "${code}" not found`);
+                return;
+            }
+            
+            // Add to filter list
+            filterClients.push({
+                code: client.code,
+                name: client.name,
+                id: client.id
+            });
+            
+            input.value = '';
+            updateClientFilterList();
+            
+        } catch (error) {
+            console.error('Error verifying client:', error);
+            alert('Error verifying client code');
+        }
+    }
+    
+    function removeClientFilter(code) {
+        filterClients = filterClients.filter(c => c.code !== code);
+        updateClientFilterList();
+    }
+    
+    function updateClientFilterList() {
+        const container = document.getElementById('clientFilterList');
+        
+        if (filterClients.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        
+        container.innerHTML = filterClients.map(client => `
+            <span class="badge bg-secondary me-1 mb-1" style="cursor: pointer;" 
+                  onclick="removeClientFilter('${client.code}')" title="Click to remove">
+                ${client.code} - ${client.name} <i class="bi bi-x"></i>
+            </span>
+        `).join('');
+    }
+
+    // Product filter management functions (similar to client overlays)
+    async function addProductFilter() {
+        const input = document.getElementById('productFilterInput');
+        const code = input.value.trim().toUpperCase();
+        
+        if (!code) {
+            return;
+        }
+        
+        // Check if already added
+        if (filterProducts.some(p => p.code.toUpperCase() === code.toUpperCase())) {
+            alert('Product code already added to filter');
+            input.value = '';
+            return;
+        }
+        
+        // Verify product exists
+        try {
+            const data = await fetchAPI(`products/?code=${code}`);
+            const products = data.results || data;
+            const product = products.find(p => p.code.toUpperCase() === code.toUpperCase());
+            
+            if (!product) {
+                alert(`Product with code "${code}" not found`);
+                return;
+            }
+            
+            // Add to filter list
+            filterProducts.push({
+                code: product.code,
+                name: product.name,
+                id: product.id
+            });
+            
+            input.value = '';
+            updateProductFilterList();
+            
+        } catch (error) {
+            console.error('Error verifying product:', error);
+            alert('Error verifying product code');
+        }
+    }
+    
+    function removeProductFilter(code) {
+        filterProducts = filterProducts.filter(p => p.code !== code);
+        updateProductFilterList();
+    }
+    
+    function updateProductFilterList() {
+        const container = document.getElementById('productFilterList');
+        
+        if (filterProducts.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        
+        container.innerHTML = filterProducts.map(product => `
+            <span class="badge bg-info me-1 mb-1" style="cursor: pointer;" 
+                  onclick="removeProductFilter('${product.code}')" title="Click to remove">
+                ${product.code} - ${product.name} <i class="bi bi-x"></i>
             </span>
         `).join('');
     }
