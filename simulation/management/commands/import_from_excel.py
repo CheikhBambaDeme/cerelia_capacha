@@ -96,6 +96,9 @@ class Command(BaseCommand):
                 # 8. Create Demand Forecasts from real forecast data
                 self._create_forecasts(forecast_df, clients, products)
                 
+                # Set all lines to default shift config '3x8 5d' after import
+                self._set_default_shift_3x8_5d()
+            
             self.stdout.write(self.style.SUCCESS('Data import completed successfully!'))
             
         except FileNotFoundError:
@@ -453,3 +456,20 @@ class Command(BaseCommand):
         if forecasts_to_create:
             DemandForecast.objects.bulk_create(forecasts_to_create, batch_size=5000)
             self.stdout.write(f'  Created {len(forecasts_to_create)} demand forecasts')
+    
+    def _set_default_shift_3x8_5d(self):
+        """Set all ProductionLine.default_shift_config to the '3x8 5d' ShiftConfiguration."""
+        from simulation.models import ShiftConfiguration, ProductionLine
+        shift = ShiftConfiguration.objects.filter(name__icontains='3x8 5d').first()
+        if not shift:
+            shift = ShiftConfiguration.objects.filter(name__icontains='3x8', description__icontains='5d').first()
+        if not shift:
+            self.stdout.write(self.style.ERROR("No ShiftConfiguration found with name containing '3x8 5d' or name '3x8' and description '5d'. Please create it first."))
+            return
+        updated = 0
+        for line in ProductionLine.objects.all():
+            if line.default_shift_config != shift:
+                line.default_shift_config = shift
+                line.save()
+                updated += 1
+        self.stdout.write(f"Updated {updated} production lines to default shift config: {shift.name}")
