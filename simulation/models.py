@@ -365,24 +365,44 @@ class SimulationCategory(models.Model):
         return [t.strip() for t in self.packaging_types.split(',') if t.strip()]
     
     def get_matching_products(self):
-        """Get products matching this category's filters"""
+        """
+        Get products matching this category's filters.
+        
+        IMPORTANT: Products are ALWAYS filtered by their default_line.
+        Only products whose default_line is one of the category's lines are included.
+        This ensures that category simulation results match direct line simulation results.
+        
+        Additional filters (product_type, recipe_type, material_type, packaging_type)
+        are applied on top of the default_line filter.
+        """
         from django.db.models import Q
         
-        queryset = Product.objects.filter(is_active=True)
+        # Get line IDs for this category
+        line_ids = list(self.lines.values_list('id', flat=True))
         
-        # Apply product type filter
+        # ALWAYS filter by default_line - only products whose default line
+        # is one of the category's lines are included in the simulation
+        if not line_ids:
+            return Product.objects.none()
+        
+        queryset = Product.objects.filter(
+            is_active=True,
+            default_line_id__in=line_ids  # Only products with default_line in this category's lines
+        )
+        
+        # Apply product type filter (optional additional filter)
         if self.product_types_list:
             queryset = queryset.filter(product_type__in=self.product_types_list)
         
-        # Apply recipe type filter
+        # Apply recipe type filter (optional additional filter)
         if self.recipe_types_list:
             queryset = queryset.filter(recipe_type__in=self.recipe_types_list)
         
-        # Apply material type filter
+        # Apply material type filter (optional additional filter)
         if self.material_types_list:
             queryset = queryset.filter(material_type__in=self.material_types_list)
         
-        # Apply packaging type filter
+        # Apply packaging type filter (optional additional filter)
         if self.packaging_types_list:
             queryset = queryset.filter(packaging_type__in=self.packaging_types_list)
         
