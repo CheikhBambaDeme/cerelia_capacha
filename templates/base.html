@@ -262,41 +262,6 @@
                         </a>
                     </li>
                     <hr class="text-white-50 mx-3">
-                    <!-- Lab Section -->
-                    <li class="nav-item">
-                        <small class="text-white-50 px-3 text-uppercase" style="font-size: 0.7rem;">Lab Testing</small>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.resolver_match.url_name == 'lab_line' %}active{% endif %}" href="{% url 'lab_line' %}">
-                            <i class="bi bi-diagram-3"></i> Lab Line
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.resolver_match.url_name == 'lab_client' %}active{% endif %}" href="{% url 'lab_client' %}">
-                            <i class="bi bi-person-badge"></i> Lab Client
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.resolver_match.url_name == 'lab_product' %}active{% endif %}" href="{% url 'lab_product' %}">
-                            <i class="bi bi-box-seam"></i> Lab Product
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.resolver_match.url_name == 'lab_category' %}active{% endif %}" href="{% url 'lab_category' %}">
-                            <i class="bi bi-tags"></i> Lab Category
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.resolver_match.url_name == 'lab_forecast' %}active{% endif %}" href="{% url 'lab_forecast' %}">
-                            <i class="bi bi-graph-up-arrow"></i> Lab Forecast
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.resolver_match.url_name == 'lab_simulation' %}active{% endif %}" href="{% url 'lab_simulation' %}">
-                            <i class="bi bi-eyedropper"></i> Lab Simulation
-                        </a>
-                    </li>
-                    <hr class="text-white-50 mx-3">
                     <li class="nav-item">
                         <a class="nav-link" href="/admin/" target="_blank">
                             <i class="bi bi-sliders"></i> Admin Panel

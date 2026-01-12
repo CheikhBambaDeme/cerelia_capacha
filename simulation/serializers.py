@@ -6,7 +6,6 @@ from rest_framework import serializers
 from .models import (
     Site, ShiftConfiguration, ProductionLine,
     Client, Product, LineProductAssignment, DemandForecast, LineConfigOverride,
-    LabCategory, LabLine, LabClient, LabProduct, LabForecast,
     SimulationCategory, CustomShiftConfiguration
 )
 
@@ -195,108 +194,6 @@ class SimulationResultSerializer(serializers.Serializer):
     total_demand = serializers.DecimalField(max_digits=12, decimal_places=2)
     data_points = SimulationDataPointSerializer(many=True)
     overlay_data = serializers.DictField(required=False)
-
-
-# =============================================================================
-# Lab Serializers
-# =============================================================================
-
-class LabCategorySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = LabCategory
-        fields = ['id', 'name', 'code', 'color_code', 'created_at']
-        read_only_fields = ['code', 'created_at']
-
-
-class LabLineSerializer(serializers.ModelSerializer):
-    site_name = serializers.CharField(source='site.name', read_only=True)
-    site_code = serializers.CharField(source='site.code', read_only=True)
-    weekly_hours = serializers.ReadOnlyField()
-    weekly_capacity = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = LabLine
-        fields = ['id', 'name', 'code', 'site', 'site_name', 'site_code',
-                  'shifts_per_day', 'hours_per_shift', 'include_saturday', 'include_sunday',
-                  'base_capacity_per_hour', 'efficiency_factor', 
-                  'weekly_hours', 'weekly_capacity', 'created_at', 'updated_at']
-        read_only_fields = ['code', 'created_at', 'updated_at']
-    
-    def get_weekly_capacity(self, obj):
-        return obj.get_weekly_capacity()
-
-
-class LabClientSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = LabClient
-        fields = ['id', 'name', 'code', 'created_at']
-        read_only_fields = ['code', 'created_at']
-
-
-class LabProductSerializer(serializers.ModelSerializer):
-    category_name = serializers.ReadOnlyField()
-    default_line_name = serializers.ReadOnlyField()
-    
-    class Meta:
-        model = LabProduct
-        fields = ['id', 'name', 'code', 'lab_category', 
-                  'category_name', 'default_line', 'lab_default_line', 
-                  'default_line_name', 'created_at', 'updated_at']
-        read_only_fields = ['code', 'created_at', 'updated_at']
-
-
-class LabForecastSerializer(serializers.ModelSerializer):
-    client_name = serializers.ReadOnlyField()
-    product_name = serializers.ReadOnlyField()
-    reference_product_code = serializers.CharField(source='reference_product.code', read_only=True)
-    reference_product_name = serializers.CharField(source='reference_product.name', read_only=True)
-    
-    class Meta:
-        model = LabForecast
-        fields = ['id', 'client', 'lab_client', 'client_name',
-                  'product', 'lab_product', 'product_name',
-                  'reference_product', 'reference_product_code', 'reference_product_name',
-                  'annual_demand', 'start_date', 'end_date', 'created_at', 'updated_at']
-        read_only_fields = ['created_at', 'updated_at']
-
-
-class LabSimulationRequestSerializer(serializers.Serializer):
-    """Request for lab simulation (combines real and lab data)"""
-    # Real lines
-    line_ids = serializers.ListField(
-        child=serializers.IntegerField(), 
-        required=False,
-        default=list
-    )
-    # Lab lines
-    lab_line_ids = serializers.ListField(
-        child=serializers.IntegerField(), 
-        required=False,
-        default=list
-    )
-    start_date = serializers.DateField()
-    end_date = serializers.DateField()
-    # Include lab data
-    include_lab_forecasts = serializers.BooleanField(required=False, default=True)
-    # Real data filters
-    client_codes = serializers.ListField(
-        child=serializers.CharField(max_length=20),
-        required=False,
-        allow_null=True
-    )
-    product_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    category_id = serializers.IntegerField(required=False, allow_null=True)
-    # Lab data filters
-    lab_client_id = serializers.IntegerField(required=False, allow_null=True)
-    lab_product_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    lab_category_id = serializers.IntegerField(required=False, allow_null=True)
-    # Overlays
-    overlay_client_codes = serializers.ListField(
-        child=serializers.CharField(max_length=20),
-        required=False,
-        default=list
-    )
-    demand_modifications = DemandModificationSerializer(many=True, required=False, allow_null=True)
 
 
 # =============================================================================
