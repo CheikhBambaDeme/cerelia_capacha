@@ -515,7 +515,8 @@ def get_client_demand(client_id: int, line_ids: list, week_start, week_end) -> d
 
 
 def apply_demand_modifications_weekly(demand_data: dict, modifications: list, 
-                                      line_ids: list, weeks: list) -> dict:
+                                      line_ids: list, weeks: list,
+                                      global_product_ids: list = None) -> dict:
     """
     Apply demand modifications (percentage adjustments) to weekly demand data.
     Optimized: Uses cached product IDs.
@@ -530,6 +531,7 @@ def apply_demand_modifications_weekly(demand_data: dict, modifications: list,
             - percentage: float (-100 to +infinity, e.g., -50 means reduce by 50%, +20 means increase by 20%)
         line_ids: List of production line IDs to filter products
         weeks: List of week start dates
+        global_product_ids: Optional list of product IDs to restrict modifications to (from product filter)
     
     Returns:
         Modified demand_data dict
@@ -539,6 +541,11 @@ def apply_demand_modifications_weekly(demand_data: dict, modifications: list,
     
     # Get products for the lines (cached)
     valid_product_ids = _get_product_ids_for_lines(line_ids)
+    
+    # If global product filter is applied, restrict to those products
+    if global_product_ids:
+        valid_product_ids = set(valid_product_ids) & set(global_product_ids)
+    
     weeks_set = set(weeks)
     
     for mod in modifications:
@@ -601,7 +608,8 @@ def apply_demand_modifications_weekly(demand_data: dict, modifications: list,
 
 
 def apply_demand_modifications_daily(demand_data: dict, modifications: list,
-                                     line_ids: list, days: list) -> dict:
+                                     line_ids: list, days: list,
+                                     global_product_ids: list = None) -> dict:
     """
     Apply demand modifications (percentage adjustments) to daily demand data.
     Optimized: Uses cached product IDs.
@@ -611,6 +619,7 @@ def apply_demand_modifications_daily(demand_data: dict, modifications: list,
         modifications: List of modification dicts (same format as weekly)
         line_ids: List of production line IDs to filter products
         days: List of dates
+        global_product_ids: Optional list of product IDs to restrict modifications to (from product filter)
     
     Returns:
         Modified demand_data dict
@@ -620,6 +629,10 @@ def apply_demand_modifications_daily(demand_data: dict, modifications: list,
     
     # Get products for the lines (cached)
     valid_product_ids = _get_product_ids_for_lines(line_ids)
+    
+    # If global product filter is applied, restrict to those products
+    if global_product_ids:
+        valid_product_ids = set(valid_product_ids) & set(global_product_ids)
     
     for mod in modifications:
         client_id = mod.get('client_id')
@@ -824,7 +837,8 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
     # Apply demand modifications if any
     if demand_modifications:
         demand_data = apply_demand_modifications_weekly(
-            demand_data, demand_modifications, line_ids, weeks
+            demand_data, demand_modifications, line_ids, weeks,
+            global_product_ids=product_ids if product_ids else None
         )
     
     # Get overlay demand if client filter is applied
@@ -991,7 +1005,8 @@ def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
     # Apply demand modifications if any
     if demand_modifications:
         demand_data = apply_demand_modifications_daily(
-            demand_data, demand_modifications, line_ids, days
+            demand_data, demand_modifications, line_ids, days,
+            global_product_ids=product_ids if product_ids else None
         )
     
     # Get overlay demand if client filter is applied
@@ -1351,6 +1366,7 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
     
     # Resolve product_ids from product_codes or single product_code (must be in matching products)
     product_ids = []
+    not_found_products = []  # Track products that weren't found in category
     if product_codes:
         for code in product_codes:
             product = Product.objects.filter(
@@ -1359,6 +1375,13 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
             ).first()
             if product:
                 product_ids.append(product.id)
+            else:
+                # Check if the product exists at all
+                exists = Product.objects.filter(code__iexact=code).exists()
+                if exists:
+                    not_found_products.append(f"{code} (not in category)")
+                else:
+                    not_found_products.append(f"{code} (not found)")
     elif product_code:
         product = Product.objects.filter(
             code__iexact=product_code,
@@ -1366,6 +1389,13 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
         ).first()
         if product:
             product_ids.append(product.id)
+        else:
+            # Check if the product exists at all
+            exists = Product.objects.filter(code__iexact=product_code).exists()
+            if exists:
+                not_found_products.append(f"{product_code} (not in category)")
+            else:
+                not_found_products.append(f"{product_code} (not found)")
     
     # For backward compatibility - single product_id
     product_id = product_ids[0] if len(product_ids) == 1 else None
@@ -1407,6 +1437,10 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
         overlay_data['product_code'] = product_code
     if demand_modifications:
         overlay_data['demand_modifications'] = demand_modifications
+    if not_found_products:
+        overlay_data['product_filter_warnings'] = not_found_products
+    # Track how many products are actually being used in the filter
+    overlay_data['filtered_product_count'] = len(product_ids) if product_ids else len(matching_product_ids)
     
     # Call the appropriate granularity function
     if granularity == 'day':
@@ -1468,10 +1502,10 @@ def _run_category_simulation_weekly(line_ids, config_dict, start_date, end_date,
     capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks)
     
     # Determine which product IDs to query
-    if len(product_ids) > 1:
+    # If product filter is applied (product_ids has items), use those
+    # Otherwise, use all matching products from the category
+    if product_ids:
         query_product_ids = set(product_ids)
-    elif product_id:
-        query_product_ids = {product_id}
     else:
         query_product_ids = matching_product_ids
     
@@ -1606,10 +1640,10 @@ def _run_category_simulation_daily(line_ids, config_dict, start_date, end_date,
     capacity_by_day = calculate_capacity_per_day(line_ids, config_dict, days)
     
     # Determine which product IDs to query
-    if len(product_ids) > 1:
+    # If product filter is applied (product_ids has items), use those
+    # Otherwise, use all matching products from the category
+    if product_ids:
         query_product_ids = set(product_ids)
-    elif product_id:
-        query_product_ids = {product_id}
     else:
         query_product_ids = matching_product_ids
     
