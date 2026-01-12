@@ -22,21 +22,6 @@ class Site(models.Model):
         return f"{self.code} - {self.name}"
 
 
-class ProductCategory(models.Model):
-    """Product category (Pizza, Pastry, Pancakes, etc.)"""
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True)
-    color_code = models.CharField(max_length=7, default='#5e3e2f', help_text='Hex color for charts')
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name_plural = 'Product Categories'
-        ordering = ['name']
-
-    def __str__(self):
-        return self.name
-
-
 class ShiftConfiguration(models.Model):
     """
     Shift configuration options
@@ -208,14 +193,19 @@ class LineConfigOverride(models.Model):
     
     # Custom configuration
     shifts_per_day = models.IntegerField(
-        validators=[MinValueValidator(1), MaxValueValidator(4)],
-        help_text='Number of shifts per day (1-4)'
+        validators=[MinValueValidator(0), MaxValueValidator(4)],
+        help_text='Number of shifts per day (0-4, 0 = shutdown)'
     )
     hours_per_shift = models.DecimalField(
         max_digits=4,
         decimal_places=2,
         validators=[MinValueValidator(0), MaxValueValidator(12)],
         help_text='Hours per shift (0-12)'
+    )
+    days_per_week = models.IntegerField(
+        default=5,
+        validators=[MinValueValidator(0), MaxValueValidator(7)],
+        help_text='Number of working days per week (0-7)'
     )
     include_saturday = models.BooleanField(
         default=False,
@@ -258,23 +248,20 @@ class LineConfigOverride(models.Model):
     
     @property
     def config_display(self):
-        """Display format like '2x4 S' or '3x8 SS'"""
+        """Display format like '2x8 SS 5d' or '3x8 7d'"""
+        if self.shifts_per_day == 0:
+            return 'Shutdown'
         weekend = ''
         if self.include_saturday and self.include_sunday:
             weekend = ' SS'
         elif self.include_saturday:
             weekend = ' S'
-        return f"{self.shifts_per_day}x{int(self.hours_per_shift)}{weekend}"
+        return f"{self.shifts_per_day}x{int(self.hours_per_shift)}{weekend} {self.days_per_week}d"
     
     @property
     def weekly_hours(self):
         """Calculate total weekly hours for this configuration"""
-        days_per_week = 5  # Mon-Fri
-        if self.include_saturday:
-            days_per_week += 1
-        if self.include_sunday:
-            days_per_week += 1
-        return float(self.shifts_per_day * self.hours_per_shift * days_per_week)
+        return float(self.shifts_per_day * self.hours_per_shift * self.days_per_week)
 
 
 class Client(models.Model):
@@ -297,15 +284,119 @@ class Client(models.Model):
         return self.name
 
 
+class SimulationCategory(models.Model):
+    """
+    User-defined category for simulation filtering.
+    Combines site, lines, and product attributes to create reusable filter presets.
+    """
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    
+    # Site filter (optional - if set, only lines from this site show)
+    site = models.ForeignKey(
+        Site,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='simulation_categories',
+        help_text='Filter lines by this site (optional)'
+    )
+    
+    # Selected lines (can be from any site if site is not set)
+    lines = models.ManyToManyField(
+        'ProductionLine',
+        blank=True,
+        related_name='simulation_categories',
+        help_text='Production lines included in this category'
+    )
+    
+    # Product attribute filters (comma-separated values for multiple selections)
+    product_types = models.TextField(
+        blank=True,
+        default='',
+        help_text='Comma-separated product types to include'
+    )
+    recipe_types = models.TextField(
+        blank=True,
+        default='',
+        help_text='Comma-separated recipe types to include'
+    )
+    material_types = models.TextField(
+        blank=True,
+        default='',
+        help_text='Comma-separated material types to include'
+    )
+    packaging_types = models.TextField(
+        blank=True,
+        default='',
+        help_text='Comma-separated packaging types to include'
+    )
+    
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Simulation Category'
+        verbose_name_plural = 'Simulation Categories'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+    
+    @property
+    def product_types_list(self):
+        """Return list of product types"""
+        return [t.strip() for t in self.product_types.split(',') if t.strip()]
+    
+    @property
+    def recipe_types_list(self):
+        """Return list of recipe types"""
+        return [t.strip() for t in self.recipe_types.split(',') if t.strip()]
+    
+    @property
+    def material_types_list(self):
+        """Return list of material types"""
+        return [t.strip() for t in self.material_types.split(',') if t.strip()]
+    
+    @property
+    def packaging_types_list(self):
+        """Return list of packaging types"""
+        return [t.strip() for t in self.packaging_types.split(',') if t.strip()]
+    
+    def get_matching_products(self):
+        """Get products matching this category's filters"""
+        from django.db.models import Q
+        
+        queryset = Product.objects.filter(is_active=True)
+        
+        # Apply product type filter
+        if self.product_types_list:
+            queryset = queryset.filter(product_type__in=self.product_types_list)
+        
+        # Apply recipe type filter
+        if self.recipe_types_list:
+            queryset = queryset.filter(recipe_type__in=self.recipe_types_list)
+        
+        # Apply material type filter
+        if self.material_types_list:
+            queryset = queryset.filter(material_type__in=self.material_types_list)
+        
+        # Apply packaging type filter
+        if self.packaging_types_list:
+            queryset = queryset.filter(packaging_type__in=self.packaging_types_list)
+        
+        return queryset
+    
+    def get_line_ids(self):
+        """Get list of line IDs for this category"""
+        return list(self.lines.values_list('id', flat=True))
+
+
 class Product(models.Model):
     """Individual product/article (~800 distinct products)"""
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=200)
-    category = models.ForeignKey(
-        ProductCategory, 
-        on_delete=models.PROTECT, 
-        related_name='products'
-    )
     
     # Default production line for this product
     default_line = models.ForeignKey(
@@ -325,17 +416,26 @@ class Product(models.Model):
         help_text='Weight in kg per unit'
     )
     
+    # New product attributes for filtering
+    product_type = models.CharField(max_length=100, blank=True, default='', help_text='Product type classification')
+    recipe_type = models.CharField(max_length=100, blank=True, default='', help_text='Recipe type classification')
+    material_type = models.CharField(max_length=100, blank=True, default='', help_text='Material type classification')
+    packaging_type = models.CharField(max_length=100, blank=True, default='', help_text='Packaging type classification')
+    
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['category__name', 'code']
+        ordering = ['code']
         indexes = [
             models.Index(fields=['is_active']),
-            models.Index(fields=['category', 'is_active']),
             models.Index(fields=['default_line']),
             models.Index(fields=['code']),
+            models.Index(fields=['product_type']),
+            models.Index(fields=['recipe_type']),
+            models.Index(fields=['material_type']),
+            models.Index(fields=['packaging_type']),
         ]
 
     def __str__(self):
@@ -552,14 +652,7 @@ class LabProduct(models.Model):
     name = models.CharField(max_length=200)
     code = models.CharField(max_length=50, unique=True, editable=False)
     
-    # Category can be real or lab category
-    category = models.ForeignKey(
-        ProductCategory, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True,
-        related_name='lab_products'
-    )
+    # Category - lab category only
     lab_category = models.ForeignKey(
         LabCategory, 
         on_delete=models.SET_NULL, 
@@ -602,9 +695,7 @@ class LabProduct(models.Model):
 
     @property
     def category_name(self):
-        if self.category:
-            return self.category.name
-        elif self.lab_category:
+        if self.lab_category:
             return f"[LAB] {self.lab_category.name}"
         return "No Category"
 
@@ -702,4 +793,59 @@ class LabForecast(models.Model):
 
     def __str__(self):
         return f"[LAB] {self.client_name} - {self.product_name} ({self.annual_demand}/year)"
+
+
+class CustomShiftConfiguration(models.Model):
+    """
+    User-defined custom shift configuration.
+    Allows users to create their own shift configurations beyond the defaults.
+    """
+    name = models.CharField(max_length=50, unique=True)
+    description = models.TextField(blank=True)
+    shifts_per_day = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(4)],
+        help_text='Number of shifts per day (1-4)'
+    )
+    hours_per_shift = models.DecimalField(
+        max_digits=4, 
+        decimal_places=2,
+        help_text='Hours per shift'
+    )
+    days_per_week = models.IntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(7)],
+        help_text='Number of working days (1-7)'
+    )
+    includes_saturday = models.BooleanField(default=False)
+    includes_sunday = models.BooleanField(default=False)
+    
+    # User-created flag to distinguish from system defaults
+    is_custom = models.BooleanField(default=True, editable=False)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    @property
+    def weekly_hours(self):
+        return float(self.shifts_per_day * self.hours_per_shift * self.days_per_week)
+    
+    class Meta:
+        verbose_name = 'Custom Shift Configuration'
+        verbose_name_plural = 'Custom Shift Configurations'
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.weekly_hours}h/week)"
+    
+    def save(self, *args, **kwargs):
+        """Auto-generate name based on configuration if not provided"""
+        if not self.name:
+            weekend = ''
+            if self.includes_saturday and self.includes_sunday:
+                weekend = ' SS'
+            elif self.includes_saturday:
+                weekend = ' S'
+            elif self.includes_sunday:
+                weekend = ' Sun'
+            self.name = f"{self.shifts_per_day}x{int(self.hours_per_shift)}{weekend} {self.days_per_week}d"
+        super().save(*args, **kwargs)
 

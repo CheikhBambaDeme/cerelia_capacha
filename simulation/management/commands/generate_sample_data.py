@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from django.core.management.base import BaseCommand
 from simulation.models import (
-    Site, ProductCategory, ShiftConfiguration, ProductionLine,
+    Site, ShiftConfiguration, ProductionLine,
     Client, Product, LineProductAssignment, DemandForecast
 )
 
@@ -58,23 +58,6 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(f'  Created shift config: {config.name}')
 
-        # Create Product Categories
-        categories_data = [
-            {'name': 'Pizza Dough', 'color_code': '#ea6d09', 'description': 'Ready-to-bake pizza bases'},
-            {'name': 'Pastry', 'color_code': '#f5dd1f', 'description': 'Puff pastry and croissant dough'},
-            {'name': 'Pancakes', 'color_code': '#5e3e2f', 'description': 'Pancake and crepe batter'},
-            {'name': 'Bread Dough', 'color_code': '#8B4513', 'description': 'Bread and roll dough'},
-            {'name': 'Cookie Dough', 'color_code': '#D2691E', 'description': 'Cookie and biscuit dough'},
-        ]
-        categories = []
-        for data in categories_data:
-            category, created = ProductCategory.objects.get_or_create(
-                name=data['name'], defaults=data
-            )
-            categories.append(category)
-            if created:
-                self.stdout.write(f'  Created category: {category.name}')
-
         # Create Clients
         clients_data = [
             {'name': 'Lidl', 'code': 'LIDL', 'priority': 1},
@@ -118,15 +101,16 @@ class Command(BaseCommand):
 
         # Create Products (~100 sample products)
         products = []
+        product_types = ['Pizza', 'Pastry', 'Pancake', 'Bread', 'Cookie']
         product_counter = 1
-        for category in categories:
+        for product_type in product_types:
             num_products = random.randint(15, 25)
             for i in range(num_products):
                 product_data = {
-                    'code': f'{category.name[:3].upper()}{product_counter:04d}',
-                    'name': f'{category.name} Product {i+1}',
-                    'category': category,
+                    'code': f'{product_type[:3].upper()}{product_counter:04d}',
+                    'name': f'{product_type} Product {i+1}',
                     'default_line': random.choice(lines),
+                    'product_type': product_type,
                     'unit_weight': Decimal(str(round(random.uniform(0.2, 2.0), 3))),
                 }
                 product, created = Product.objects.get_or_create(
@@ -205,7 +189,6 @@ class Command(BaseCommand):
 Summary:
   - Sites: {Site.objects.count()}
   - Shift Configurations: {ShiftConfiguration.objects.count()}
-  - Product Categories: {ProductCategory.objects.count()}
   - Production Lines: {ProductionLine.objects.count()}
   - Clients: {Client.objects.count()}
   - Products: {Product.objects.count()}

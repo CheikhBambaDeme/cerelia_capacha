@@ -230,7 +230,7 @@
             <!-- Sidebar -->
             <nav class="col-md-2 col-lg-2 d-md-block sidebar collapse" style="max-width: 200px; min-width: 180px;">
                 <div class="logo">
-                    <i class="bi bi-gear-wide-connected"></i> Cerelia
+                    <i class="bi bi-gear-wide-connected"></i> Cérélia
                 </div>
                 <ul class="nav flex-column">
                     <li class="nav-item">
@@ -241,6 +241,18 @@
                     <li class="nav-item">
                         <a class="nav-link {% if request.resolver_match.url_name == 'line_configuration' %}active{% endif %}" href="{% url 'line_configuration' %}">
                             <i class="bi bi-wrench-adjustable"></i> Line Configuration
+                        </a>
+                    </li>
+                    <hr class="text-white-50 mx-3 my-2">
+                    <!-- Categories and Shift Management -->
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'simulation_category' %}active{% endif %}" href="{% url 'simulation_category' %}">
+                            <i class="bi bi-collection"></i> Categories
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.resolver_match.url_name == 'shift_management' %}active{% endif %}" href="{% url 'shift_management' %}">
+                            <i class="bi bi-clock-history"></i> Shift Management
                         </a>
                     </li>
                     <hr class="text-white-50 mx-3 my-2">

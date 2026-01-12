@@ -4,9 +4,10 @@ Django REST Framework Serializers for Cerelia Simulation
 
 from rest_framework import serializers
 from .models import (
-    Site, ProductCategory, ShiftConfiguration, ProductionLine,
+    Site, ShiftConfiguration, ProductionLine,
     Client, Product, LineProductAssignment, DemandForecast, LineConfigOverride,
-    LabCategory, LabLine, LabClient, LabProduct, LabForecast
+    LabCategory, LabLine, LabClient, LabProduct, LabForecast,
+    SimulationCategory, CustomShiftConfiguration
 )
 
 
@@ -14,17 +15,6 @@ class SiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Site
         fields = ['id', 'name', 'code', 'is_active']
-
-
-class ProductCategorySerializer(serializers.ModelSerializer):
-    product_count = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = ProductCategory
-        fields = ['id', 'name', 'description', 'color_code', 'product_count']
-    
-    def get_product_count(self, obj):
-        return obj.products.count()
 
 
 class ShiftConfigurationSerializer(serializers.ModelSerializer):
@@ -69,7 +59,7 @@ class LineConfigOverrideSerializer(serializers.ModelSerializer):
     class Meta:
         model = LineConfigOverride
         fields = ['id', 'line', 'line_name', 'site_name', 'start_date', 'end_date',
-                  'shifts_per_day', 'hours_per_shift', 'include_saturday', 
+                  'shifts_per_day', 'hours_per_shift', 'days_per_week', 'include_saturday', 
                   'include_sunday', 'reason', 'is_recurrent', 'recurrence_weeks', 'is_active', 'config_display', 
                   'weekly_hours', 'created_at']
 
@@ -81,13 +71,12 @@ class ClientSerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
-    category_name = serializers.CharField(source='category.name', read_only=True)
     default_line_name = serializers.CharField(source='default_line.name', read_only=True)
     
     class Meta:
         model = Product
-        fields = ['id', 'code', 'name', 'category', 'category_name', 
-                  'default_line', 'default_line_name', 'unit_weight', 'is_active']
+        fields = ['id', 'code', 'name', 'default_line', 'default_line_name', 'unit_weight', 'is_active',
+                  'product_type', 'recipe_type', 'material_type', 'packaging_type']
 
 
 class LineProductAssignmentSerializer(serializers.ModelSerializer):
@@ -143,6 +132,11 @@ class LineSimulationRequestSerializer(serializers.Serializer):
         allow_null=True
     )
     product_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    product_codes = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=False,
+        allow_null=True
+    )
     category_id = serializers.IntegerField(required=False, allow_null=True)
     overlay_client_codes = serializers.ListField(
         child=serializers.CharField(max_length=20),
@@ -245,7 +239,7 @@ class LabProductSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = LabProduct
-        fields = ['id', 'name', 'code', 'category', 'lab_category', 
+        fields = ['id', 'name', 'code', 'lab_category', 
                   'category_name', 'default_line', 'lab_default_line', 
                   'default_line_name', 'created_at', 'updated_at']
         read_only_fields = ['code', 'created_at', 'updated_at']
@@ -301,5 +295,97 @@ class LabSimulationRequestSerializer(serializers.Serializer):
         child=serializers.CharField(max_length=20),
         required=False,
         default=list
+    )
+    demand_modifications = DemandModificationSerializer(many=True, required=False, allow_null=True)
+
+
+# =============================================================================
+# Simulation Category Serializers
+# =============================================================================
+
+class SimulationCategorySerializer(serializers.ModelSerializer):
+    site_name = serializers.CharField(source='site.name', read_only=True)
+    line_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False,
+        default=list
+    )
+    lines_data = serializers.SerializerMethodField(read_only=True)
+    matching_products_count = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta:
+        model = SimulationCategory
+        fields = ['id', 'name', 'description', 'site', 'site_name', 
+                  'line_ids', 'lines_data',
+                  'product_types', 'recipe_types', 'material_types', 'packaging_types',
+                  'is_active', 'matching_products_count', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+    
+    def get_lines_data(self, obj):
+        """Get detailed line information"""
+        return [{
+            'id': line.id,
+            'name': line.name,
+            'code': line.code,
+            'site_name': line.site.name
+        } for line in obj.lines.all()]
+    
+    def get_matching_products_count(self, obj):
+        """Get count of products matching this category"""
+        return obj.get_matching_products().count()
+    
+    def create(self, validated_data):
+        line_ids = validated_data.pop('line_ids', [])
+        instance = super().create(validated_data)
+        if line_ids:
+            instance.lines.set(line_ids)
+        return instance
+    
+    def update(self, instance, validated_data):
+        line_ids = validated_data.pop('line_ids', None)
+        instance = super().update(instance, validated_data)
+        if line_ids is not None:
+            instance.lines.set(line_ids)
+        return instance
+
+
+class CustomShiftConfigurationSerializer(serializers.ModelSerializer):
+    weekly_hours = serializers.ReadOnlyField()
+    
+    class Meta:
+        model = CustomShiftConfiguration
+        fields = ['id', 'name', 'description', 'shifts_per_day', 'hours_per_shift',
+                  'days_per_week', 'includes_saturday', 'includes_sunday', 
+                  'weekly_hours', 'is_custom', 'created_at', 'updated_at']
+        read_only_fields = ['is_custom', 'created_at', 'updated_at']
+
+
+class CategorySimulationRequestSerializer(serializers.Serializer):
+    """Request for simulation using categories (new workflow)"""
+    simulation_category_id = serializers.IntegerField()
+    shift_configs = LineShiftConfigSerializer(many=True)
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    client_codes = serializers.ListField(
+        child=serializers.CharField(max_length=20),
+        required=False,
+        allow_null=True
+    )
+    product_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    product_codes = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=False,
+        allow_null=True
+    )
+    overlay_client_codes = serializers.ListField(
+        child=serializers.CharField(max_length=20),
+        required=False,
+        default=list
+    )
+    granularity = serializers.ChoiceField(
+        choices=['week', 'day'],
+        required=False,
+        default='week'
     )
     demand_modifications = DemandModificationSerializer(many=True, required=False, allow_null=True)

@@ -25,22 +25,11 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label class="form-label">Category</label>
-                        <div class="mb-2">
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="categoryType" 
-                                       id="realCategory" value="real" checked>
-                                <label class="form-check-label" for="realCategory">Real Category</label>
-                            </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="categoryType" 
-                                       id="labCategory" value="lab">
-                                <label class="form-check-label" for="labCategory">Lab Category</label>
-                            </div>
-                        </div>
+                        <label class="form-label">Category (Lab)</label>
                         <select class="form-select" id="categorySelect">
-                            <option value="">Select a category...</option>
+                            <option value="">Select a lab category...</option>
                         </select>
+                        <small class="text-muted">Use Lab Categories to organize products</small>
                     </div>
                     
                     <div class="mb-3">
@@ -107,12 +96,10 @@
 {% block extra_js %}
 <script>
 const API_LAB_PRODUCTS = '/api/lab/products/';
-const API_CATEGORIES = '/api/categories/';
 const API_LAB_CATEGORIES = '/api/lab/categories/';
 const API_LINES = '/api/lines/';
 const API_LAB_LINES = '/api/lab/lines/';
 
-let realCategories = [];
 let labCategories = [];
 let realLines = [];
 let labLines = [];
@@ -125,11 +112,7 @@ document.addEventListener('DOMContentLoaded', function() {
         await createProduct();
     });
     
-    // Radio button change handlers
-    document.querySelectorAll('input[name="categoryType"]').forEach(radio => {
-        radio.addEventListener('change', updateCategorySelect);
-    });
-    
+    // Radio button change handlers for line type
     document.querySelectorAll('input[name="lineType"]').forEach(radio => {
         radio.addEventListener('change', updateLineSelect);
     });
@@ -137,7 +120,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function loadAllData() {
     await Promise.all([
-        loadRealCategories(),
         loadLabCategories(),
         loadRealLines(),
         loadLabLines(),
@@ -145,16 +127,6 @@ async function loadAllData() {
     ]);
     updateCategorySelect();
     updateLineSelect();
-}
-
-async function loadRealCategories() {
-    try {
-        const response = await fetch(API_CATEGORIES);
-        const data = await response.json();
-        realCategories = data.results || data;
-    } catch (error) {
-        console.error('Error loading categories:', error);
-    }
 }
 
 async function loadLabCategories() {
@@ -188,15 +160,13 @@ async function loadLabLines() {
 }
 
 function updateCategorySelect() {
-    const isLab = document.getElementById('labCategory').checked;
     const select = document.getElementById('categorySelect');
-    const categories = isLab ? labCategories : realCategories;
     
-    select.innerHTML = '<option value="">Select a category...</option>';
-    categories.forEach(cat => {
+    select.innerHTML = '<option value="">Select a lab category...</option>';
+    labCategories.forEach(cat => {
         const option = document.createElement('option');
         option.value = cat.id;
-        option.textContent = isLab ? `[LAB] ${cat.name}` : cat.name;
+        option.textContent = cat.name;
         select.appendChild(option);
     });
 }
@@ -251,7 +221,6 @@ async function loadProducts() {
 }
 
 async function createProduct() {
-    const isLabCategory = document.getElementById('labCategory').checked;
     const isLabLine = document.getElementById('labLine').checked;
     
     const data = {
@@ -260,11 +229,7 @@ async function createProduct() {
     
     const categoryId = document.getElementById('categorySelect').value;
     if (categoryId) {
-        if (isLabCategory) {
-            data.lab_category = parseInt(categoryId);
-        } else {
-            data.category = parseInt(categoryId);
-        }
+        data.lab_category = parseInt(categoryId);
     }
     
     const lineId = document.getElementById('lineSelect').value;
@@ -293,7 +258,6 @@ async function createProduct() {
         
         if (response.ok) {
             document.getElementById('createProductForm').reset();
-            document.getElementById('realCategory').checked = true;
             document.getElementById('realLine').checked = true;
             updateCategorySelect();
             updateLineSelect();
