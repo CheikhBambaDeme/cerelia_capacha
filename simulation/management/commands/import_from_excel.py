@@ -193,12 +193,48 @@ class Command(BaseCommand):
         return configs
 
     def _create_lines(self, data_df, sites, shift_configs):
-        """Create production lines from the data"""
+        """Create production lines from the data with real efficiency and cadency values"""
         lines_df = data_df[["Ligne", "Site"]].drop_duplicates().reset_index(drop=True)
         lines_df = lines_df[lines_df["Ligne"] != "(vide)"]
         
         # Default shift config
         default_shift = list(shift_configs.values())[0] if shift_configs else None
+        
+        # Real efficiency and cadency data from lines.ipynb
+        line_data = {
+            'PA02F05': {'efficiency': 82.0, 'cadency': 5400.0},
+            'PA04F02': {'efficiency': 84.8, 'cadency': 4800.0},
+            'PA02F01': {'efficiency': 83.5, 'cadency': 5400.0},
+            'PA02F02': {'efficiency': 78.0, 'cadency': 5280.0},
+            'PA02F06': {'efficiency': 84.5, 'cadency': 5160.0},
+            'PA05F02': {'efficiency': 79.5, 'cadency': 5100.0},
+            'PA02F04': {'efficiency': 82.0, 'cadency': 5400.0},
+            'PA05F01': {'efficiency': 84.3, 'cadency': 5100.0},
+            'PA02F03': {'efficiency': 84.5, 'cadency': 5280.0},
+            'PA04F01': {'efficiency': 84.8, 'cadency': 4800.0},
+            'PA06F12': {'efficiency': 50.0, 'cadency': 7740.0},
+            'PA06F13': {'efficiency': 50.0, 'cadency': 10380.0},
+            'PA02F08': {'efficiency': 86.0, 'cadency': 5100.0},
+            'PA06F03': {'efficiency': 63.0, 'cadency': 4200.0},
+            'PA06F04': {'efficiency': 64.0, 'cadency': 4800.0},
+            'PA04F03': {'efficiency': 85.0, 'cadency': 9600.0},
+            'PA05F04': {'efficiency': 80.5, 'cadency': 4440.0},
+            'PA06F01': {'efficiency': 60.0, 'cadency': 5200.0},
+            'PA03F06': {'efficiency': 82.4, 'cadency': 2035.0},
+            'PA03F01': {'efficiency': 74.0, 'cadency': 5055.0},
+            'PA03F03': {'efficiency': 80.0, 'cadency': 4650.0},
+            'PA06F02': {'efficiency': 0.0, 'cadency': 0.0},
+            'PA03F07': {'efficiency': 84.0, 'cadency': 4980.0},
+            'PA06F10': {'efficiency': 60.0, 'cadency': 10500.0},
+            'PA06F05': {'efficiency': 72.2, 'cadency': 5400.0},
+            'PA04F05': {'efficiency': 85.0, 'cadency': 4800.0},
+            'PA06C01': {'efficiency': 0.0, 'cadency': 0.0},
+            'PA06F11': {'efficiency': 50.0, 'cadency': 4710.0},
+            'PA06F06': {'efficiency': 75.0, 'cadency': 4500.0},
+            'PA06F07': {'efficiency': 75.0, 'cadency': 4500.0},
+            'PA02F07': {'efficiency': 78.5, 'cadency': 5280.0},
+            'PA02C03': {'efficiency': 0.0, 'cadency': 0.0},
+        }
         
         lines = {}
         for _, row in lines_df.iterrows():
@@ -210,9 +246,15 @@ class Command(BaseCommand):
             
             site = sites[site_name]
             
-            # Generate realistic capacity values
-            base_capacity = random.uniform(800, 2500)
-            efficiency = random.uniform(0.75, 0.92)
+            # Use real data if available, otherwise generate random values
+            if line_code in line_data:
+                # Efficiency is stored as percentage (e.g., 82.0), convert to decimal (0.82)
+                efficiency = line_data[line_code]['efficiency'] / 100.0
+                base_capacity = line_data[line_code]['cadency']
+            else:
+                # Fallback to random values for unknown lines
+                base_capacity = random.uniform(800, 2500)
+                efficiency = random.uniform(0.75, 0.92)
             
             line, created = ProductionLine.objects.get_or_create(
                 site=site,
@@ -227,7 +269,7 @@ class Command(BaseCommand):
             )
             lines[line_code] = line
             if created:
-                self.stdout.write(f'  Created line: {line.name} at {site.name}')
+                self.stdout.write(f'  Created line: {line.name} at {site.name} (cadency: {base_capacity}, efficiency: {efficiency:.2%})')
         
         return lines
 
