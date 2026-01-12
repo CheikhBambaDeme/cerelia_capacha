@@ -123,24 +123,23 @@ class Command(BaseCommand):
         """Create sites from the data"""
         sites_df = data_df[["Site"]].drop_duplicates().reset_index(drop=True)
         
-        # Define site codes
+        # Define site codes (from clean_main_dfs.ipynb - based on order in Excel)
         site_codes = {
             "Dole": "PA02",
-            "Nanteuil": "PA04",
-            "Nanterre": "PA05",
-            "Roquefort": "PA06",
-            "Agen": "PA03",
+            "Hoerdt": "PA04",
+            "Rivoli": "PA05",
+            "SLB": "PA06",
+            "Vittel": "PA03",
         }
-        
-        # Create default codes for any unknown sites
-        unknown_counter = 1
         
         sites = {}
         for _, row in sites_df.iterrows():
             site_name = row['Site']
-            code = site_codes.get(site_name, f"SITE{unknown_counter:02d}")
-            if site_name not in site_codes:
-                unknown_counter += 1
+            code = site_codes.get(site_name)
+            
+            if not code:
+                self.stdout.write(self.style.WARNING(f'  Unknown site: {site_name} - please add to site_codes mapping'))
+                continue
             
             site, created = Site.objects.get_or_create(
                 name=site_name,
