@@ -31,6 +31,12 @@ class Command(BaseCommand):
             default='generated_data/fy26_sales_cheikh.xlsx',
             help='Path to the Excel file to import',
         )
+        parser.add_argument(
+            '--forecast-file',
+            type=str,
+            default='generated_data/forecast_cheikh.xlsx',
+            help='Path to the forecast Excel file to import',
+        )
 
     def handle(self, *args, **options):
         if options['clear']:
@@ -42,10 +48,27 @@ class Command(BaseCommand):
         try:
             # Load the Excel file
             file_path = options['file']
+            forecast_file_path = options['forecast_file']
             self.stdout.write(f'Loading data from: {file_path}')
+            self.stdout.write(f'Loading forecast data from: {forecast_file_path}')
             
             data = pd.read_excel(file_path, sheet_name=0)
             data_df = pd.DataFrame(data)
+            
+            # Load forecast data
+            forecast_data = pd.read_excel(forecast_file_path, sheet_name=0)
+            forecast_df = pd.DataFrame(forecast_data)
+            # Drop first two columns and set first row as header
+            forecast_df = forecast_df.drop(forecast_df.columns[[0, 1]], axis=1)
+            forecast_df.columns = forecast_df.iloc[0]
+            forecast_df = forecast_df.drop(forecast_df.index[0]).reset_index(drop=True)
+            # Remove rows where all week columns are empty
+            week_columns = [col for col in forecast_df.columns if str(col).startswith('W')]
+            forecast_df = forecast_df.dropna(subset=week_columns, how='all')
+            forecast_df = forecast_df[~forecast_df[week_columns].apply(
+                lambda row: all(str(x).strip() == '' or pd.isna(x) for x in row), axis=1
+            )]
+            forecast_df = forecast_df.fillna(0)
             
             # Select relevant columns
             data_df = data_df[["FY", "Période", "Article", "Libellé", "Ligne", "UVC", "UVP", 
@@ -67,11 +90,11 @@ class Command(BaseCommand):
                 # 6. Create Line-Product Assignments
                 self._create_line_product_assignments(data_df, lines, products)
                 
-                # 7. Create Clients
-                clients = self._create_clients()
+                # 7. Create Clients from real forecast data
+                clients = self._create_clients(forecast_df)
                 
-                # 8. Create Demand Forecasts
-                self._create_forecasts(clients, products)
+                # 8. Create Demand Forecasts from real forecast data
+                self._create_forecasts(forecast_df, clients, products)
                 
             self.stdout.write(self.style.SUCCESS('Data import completed successfully!'))
             
@@ -293,79 +316,83 @@ class Command(BaseCommand):
         
         self.stdout.write(f'  Created {assignments_created} line-product assignments')
 
-    def _create_clients(self):
-        """Create clients"""
-        clients_data = [
-            {'name': 'Lidl', 'code': 'LIDL'},
-            {'name': 'Carrefour', 'code': 'CARF'},
-            {'name': 'Auchan', 'code': 'AUCH'},
-            {'name': 'Leclerc', 'code': 'LECL'},
-            {'name': 'Intermarché', 'code': 'INTM'},
-            {'name': 'Casino', 'code': 'CASI'},
-            {'name': 'Monoprix', 'code': 'MONO'},
-            {'name': 'Système U', 'code': 'SYSU'},
-        ]
+    def _create_clients(self, forecast_df):
+        """Create clients from real forecast data"""
+        # Extract unique clients from forecast data
+        clients_df = forecast_df[["Code Réceptionnaire", "Nom Réceptionnaire"]].drop_duplicates().reset_index(drop=True)
         
         clients = {}
-        for data in clients_data:
+        for _, row in clients_df.iterrows():
+            code = str(row['Code Réceptionnaire'])
+            raw_name = str(row['Nom Réceptionnaire'])[:180]  # Truncate to leave room for code suffix
+            
+            # Make name unique by appending code if there's a duplicate
+            name = raw_name
+            existing_with_name = Client.objects.filter(name=name).exclude(code=code).exists()
+            if existing_with_name:
+                name = f"{raw_name} ({code})"[:200]
+            
             client, created = Client.objects.get_or_create(
-                code=data['code'],
-                defaults={'name': data['name'], 'is_active': True}
+                code=code,
+                defaults={'name': name, 'is_active': True}
             )
-            clients[data['code']] = client
+            clients[code] = client
             if created:
-                self.stdout.write(f'  Created client: {client.name}')
+                pass  # Don't spam the console
         
+        self.stdout.write(f'  Created {len(clients)} clients')
         return clients
 
-    def _create_forecasts(self, clients, products):
-        """Create demand forecasts for the clients"""
-        self.stdout.write('  Generating demand forecasts...')
+    def _create_forecasts(self, forecast_df, clients, products):
+        """Create demand forecasts from real forecast data"""
+        self.stdout.write('  Generating demand forecasts from real data...')
         
-        # Get list of products
-        product_list = list(products.values())
-        client_list = list(clients.values())
+        # Get week columns
+        week_columns = [col for col in forecast_df.columns if str(col).startswith('W')]
         
-        if not product_list or not client_list:
-            self.stdout.write('  No products or clients available for forecasts')
+        if not week_columns:
+            self.stdout.write('  No week columns found in forecast data')
             return
         
-        # Assign products to clients (each client gets a random subset)
-        client_products = {}
-        for client in client_list:
-            # Each client gets 10-30% of products
-            num_products = max(10, len(product_list) // random.randint(4, 10))
-            client_products[client.id] = random.sample(product_list, min(num_products, len(product_list)))
-        
-        # Generate weekly forecasts for 2 years
-        start_date = datetime(2026, 1, 5)  # First Monday of 2026 (week starts on Monday)
-        weeks_ahead = 104  # 2 years
-        
         forecasts_to_create = []
+        missing_products = set()
         
-        for week_offset in range(weeks_ahead):
-            week_start = start_date + timedelta(weeks=week_offset)
-            year = week_start.isocalendar()[1]
-            week_num = week_start.isocalendar()[1]
-            year = week_start.isocalendar()[0]
+        for _, row in forecast_df.iterrows():
+            client_code = str(row['Code Réceptionnaire'])
+            product_code = str(int(row['Code Article'])) if pd.notna(row['Code Article']) else None
             
-            # Seasonal factor (higher in winter, lower in summer)
-            month = week_start.month
-            if month in [11, 12, 1, 2]:
-                seasonal_factor = random.uniform(1.1, 1.4)
-            elif month in [6, 7, 8]:
-                seasonal_factor = random.uniform(0.7, 0.9)
-            else:
-                seasonal_factor = random.uniform(0.9, 1.1)
+            if not product_code:
+                continue
             
-            for client in client_list:
-                # Each client creates forecasts for their assigned products
-                for product in client_products[client.id]:
-                    # Random base demand with client-specific variation
-                    base_demand = random.uniform(500, 15000)
+            client = clients.get(client_code)
+            product = products.get(product_code)
+            
+            if not client:
+                continue
+            
+            if not product:
+                missing_products.add(product_code)
+                continue
+            
+            # Process each week column
+            for week_col in week_columns:
+                try:
+                    # Parse week column name (e.g., "W03 2026")
+                    week_str = str(week_col)
+                    parts = week_str.split()
+                    if len(parts) != 2:
+                        continue
                     
-                    # Apply seasonal factor and some noise
-                    demand = base_demand * seasonal_factor * random.uniform(0.8, 1.2)
+                    week_num = int(parts[0][1:])  # Extract number after 'W'
+                    year = int(parts[1])
+                    
+                    # Get forecast quantity
+                    quantity = row[week_col]
+                    if pd.isna(quantity) or quantity == 0:
+                        continue
+                    
+                    # Calculate week start date (Monday of that week)
+                    week_start = datetime.strptime(f'{year}-W{week_num:02d}-1', '%G-W%V-%u')
                     
                     forecasts_to_create.append(DemandForecast(
                         client=client,
@@ -373,8 +400,13 @@ class Command(BaseCommand):
                         year=year,
                         week_number=week_num,
                         week_start_date=week_start,
-                        forecast_quantity=Decimal(str(round(demand, 2)))
+                        forecast_quantity=Decimal(str(round(float(quantity), 2)))
                     ))
+                except (ValueError, TypeError) as e:
+                    continue
+        
+        if missing_products:
+            self.stdout.write(f'  Warning: {len(missing_products)} products in forecast not found in product database')
         
         # Bulk create forecasts
         if forecasts_to_create:
