@@ -27,12 +27,13 @@
                                 <th>Hours/Shift</th>
                                 <th>Days/Week</th>
                                 <th>Weekend</th>
+                                <th>Cleaning</th>
                                 <th>Weekly Hours</th>
                             </tr>
                         </thead>
                         <tbody id="systemShiftsBody">
                             <tr>
-                                <td colspan="6" class="text-center text-muted">Loading...</td>
+                                <td colspan="7" class="text-center text-muted">Loading...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -57,13 +58,14 @@
                                 <th>Hours/Shift</th>
                                 <th>Days/Week</th>
                                 <th>Weekend</th>
+                                <th>Cleaning</th>
                                 <th>Weekly Hours</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="customShiftsBody">
                             <tr>
-                                <td colspan="7" class="text-center text-muted">Loading...</td>
+                                <td colspan="8" class="text-center text-muted">Loading...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -126,21 +128,39 @@
                     
                     <div class="row">
                         <div class="col-md-6">
-                            <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" id="includeSaturday">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="includeSaturday" onchange="toggleWeekendHours()">
                                 <label class="form-check-label" for="includeSaturday">
                                     Include Saturday
                                 </label>
                             </div>
+                            <div id="saturdayHoursGroup" class="mb-3" style="display: none;">
+                                <label class="form-label small">Saturday Hours</label>
+                                <input type="number" class="form-control form-control-sm" id="saturdayHours" min="0" max="24" step="0.5" value="0">
+                            </div>
                         </div>
                         <div class="col-md-6">
-                            <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" id="includeSunday">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="includeSunday" onchange="toggleWeekendHours()">
                                 <label class="form-check-label" for="includeSunday">
                                     Include Sunday
                                 </label>
                             </div>
+                            <div id="sundayHoursGroup" class="mb-3" style="display: none;">
+                                <label class="form-label small">Sunday Hours</label>
+                                <input type="number" class="form-control form-control-sm" id="sundayHours" min="0" max="24" step="0.5" value="0">
+                            </div>
                         </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <h6 style="color: #ea6d09;"><i class="bi bi-clock"></i> Opening & Cleaning Time</h6>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Hours to subtract from weekly total</label>
+                        <input type="number" class="form-control" id="openingCleaningTime" min="0" max="50" step="0.5" value="0">
+                        <small class="text-muted">This time will be deducted from the weekly hours calculation</small>
                     </div>
                     
                     <hr>
@@ -148,6 +168,7 @@
                     <div class="alert alert-info mb-0">
                         <i class="bi bi-calculator"></i> <strong>Weekly Hours:</strong> 
                         <span id="calculatedWeeklyHours">80</span> hours
+                        <small class="text-muted d-block" id="calculationBreakdown"></small>
                     </div>
                 </form>
             </div>
@@ -196,18 +217,43 @@
         loadCustomShifts();
         
         // Setup live calculation of weekly hours
-        ['shiftsPerDay', 'hoursPerShift', 'daysPerWeek'].forEach(id => {
+        ['shiftsPerDay', 'hoursPerShift', 'daysPerWeek', 'saturdayHours', 'sundayHours', 'openingCleaningTime'].forEach(id => {
             document.getElementById(id).addEventListener('input', calculateWeeklyHours);
         });
     });
+    
+    function toggleWeekendHours() {
+        const satChecked = document.getElementById('includeSaturday').checked;
+        const sunChecked = document.getElementById('includeSunday').checked;
+        
+        document.getElementById('saturdayHoursGroup').style.display = satChecked ? 'block' : 'none';
+        document.getElementById('sundayHoursGroup').style.display = sunChecked ? 'block' : 'none';
+        
+        if (!satChecked) document.getElementById('saturdayHours').value = 0;
+        if (!sunChecked) document.getElementById('sundayHours').value = 0;
+        
+        calculateWeeklyHours();
+    }
     
     function calculateWeeklyHours() {
         const shiftsPerDay = parseFloat(document.getElementById('shiftsPerDay').value) || 0;
         const hoursPerShift = parseFloat(document.getElementById('hoursPerShift').value) || 0;
         const daysPerWeek = parseFloat(document.getElementById('daysPerWeek').value) || 0;
+        const saturdayHours = parseFloat(document.getElementById('saturdayHours').value) || 0;
+        const sundayHours = parseFloat(document.getElementById('sundayHours').value) || 0;
+        const openingCleaningTime = parseFloat(document.getElementById('openingCleaningTime').value) || 0;
         
-        const weeklyHours = shiftsPerDay * hoursPerShift * daysPerWeek;
+        const baseHours = shiftsPerDay * hoursPerShift * daysPerWeek;
+        const weeklyHours = baseHours + saturdayHours + sundayHours - openingCleaningTime;
+        
         document.getElementById('calculatedWeeklyHours').textContent = weeklyHours.toFixed(1);
+        
+        // Update breakdown
+        let breakdown = `${shiftsPerDay}×${hoursPerShift}h×${daysPerWeek}d = ${baseHours}h`;
+        if (saturdayHours > 0) breakdown += ` + ${saturdayHours}h (Sat)`;
+        if (sundayHours > 0) breakdown += ` + ${sundayHours}h (Sun)`;
+        if (openingCleaningTime > 0) breakdown += ` - ${openingCleaningTime}h (cleaning)`;
+        document.getElementById('calculationBreakdown').textContent = breakdown;
     }
     
     async function loadSystemShifts() {
@@ -219,7 +265,7 @@
             const tbody = document.getElementById('systemShiftsBody');
             
             if (shifts.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No system configurations</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No system configurations</td></tr>';
                 return;
             }
             
@@ -229,14 +275,15 @@
                     <td>${shift.shifts_per_day}</td>
                     <td>${shift.hours_per_shift}</td>
                     <td>${shift.days_per_week}</td>
-                    <td>${formatWeekend(shift.includes_saturday, shift.includes_sunday)}</td>
+                    <td>${formatWeekend(shift.includes_saturday, shift.includes_sunday, shift.saturday_hours, shift.sunday_hours)}</td>
+                    <td>${shift.opening_cleaning_time > 0 ? shift.opening_cleaning_time + 'h' : '-'}</td>
                     <td><span class="badge bg-primary">${shift.weekly_hours}h</span></td>
                 </tr>
             `).join('');
         } catch (error) {
             console.error('Error loading system shifts:', error);
             document.getElementById('systemShiftsBody').innerHTML = 
-                '<tr><td colspan="6" class="text-center text-danger">Error loading data</td></tr>';
+                '<tr><td colspan="7" class="text-center text-danger">Error loading data</td></tr>';
         }
     }
     
@@ -249,7 +296,7 @@
             const tbody = document.getElementById('customShiftsBody');
             
             if (shifts.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No custom configurations yet. Click "New Shift Configuration" to create one.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No custom configurations yet. Click "New Shift Configuration" to create one.</td></tr>';
                 return;
             }
             
@@ -259,7 +306,8 @@
                     <td>${shift.shifts_per_day}</td>
                     <td>${shift.hours_per_shift}</td>
                     <td>${shift.days_per_week}</td>
-                    <td>${formatWeekend(shift.includes_saturday, shift.includes_sunday)}</td>
+                    <td>${formatWeekend(shift.includes_saturday, shift.includes_sunday, shift.saturday_hours, shift.sunday_hours)}</td>
+                    <td>${shift.opening_cleaning_time > 0 ? shift.opening_cleaning_time + 'h' : '-'}</td>
                     <td><span class="badge bg-success">${shift.weekly_hours}h</span></td>
                     <td>
                         <button class="btn btn-sm btn-outline-primary me-1" onclick="editShift(${shift.id})" title="Edit">
@@ -274,14 +322,20 @@
         } catch (error) {
             console.error('Error loading custom shifts:', error);
             document.getElementById('customShiftsBody').innerHTML = 
-                '<tr><td colspan="7" class="text-center text-danger">Error loading data</td></tr>';
+                '<tr><td colspan="8" class="text-center text-danger">Error loading data</td></tr>';
         }
     }
     
-    function formatWeekend(saturday, sunday) {
-        if (saturday && sunday) return '<span class="badge bg-info">SS</span>';
-        if (saturday) return '<span class="badge bg-secondary">S</span>';
-        if (sunday) return '<span class="badge bg-secondary">Su</span>';
+    function formatWeekend(saturday, sunday, satHours = 0, sunHours = 0) {
+        const parts = [];
+        if (saturday) parts.push(`S${satHours > 0 ? '(' + satHours + 'h)' : ''}`);
+        if (sunday) parts.push(`Su${sunHours > 0 ? '(' + sunHours + 'h)' : ''}`);
+        
+        if (parts.length === 2 && satHours === 0 && sunHours === 0) {
+            return '<span class="badge bg-info">SS</span>';
+        } else if (parts.length > 0) {
+            return `<span class="badge bg-info">${parts.join(' ')}</span>`;
+        }
         return '<span class="text-muted">-</span>';
     }
     
@@ -291,6 +345,11 @@
         document.getElementById('shiftsPerDay').value = 2;
         document.getElementById('hoursPerShift').value = 8;
         document.getElementById('daysPerWeek').value = 5;
+        document.getElementById('saturdayHours').value = 0;
+        document.getElementById('sundayHours').value = 0;
+        document.getElementById('openingCleaningTime').value = 0;
+        document.getElementById('saturdayHoursGroup').style.display = 'none';
+        document.getElementById('sundayHoursGroup').style.display = 'none';
         document.getElementById('modalTitle').innerHTML = '<i class="bi bi-clock-history"></i> New Shift Configuration';
         calculateWeeklyHours();
     }
@@ -308,7 +367,11 @@
             document.getElementById('daysPerWeek').value = shift.days_per_week;
             document.getElementById('includeSaturday').checked = shift.includes_saturday;
             document.getElementById('includeSunday').checked = shift.includes_sunday;
+            document.getElementById('saturdayHours').value = shift.saturday_hours || 0;
+            document.getElementById('sundayHours').value = shift.sunday_hours || 0;
+            document.getElementById('openingCleaningTime').value = shift.opening_cleaning_time || 0;
             
+            toggleWeekendHours();
             calculateWeeklyHours();
             
             document.getElementById('modalTitle').innerHTML = '<i class="bi bi-pencil"></i> Edit Shift Configuration';
@@ -338,7 +401,10 @@
             hours_per_shift: hoursPerShift,
             days_per_week: daysPerWeek,
             includes_saturday: document.getElementById('includeSaturday').checked,
-            includes_sunday: document.getElementById('includeSunday').checked
+            includes_sunday: document.getElementById('includeSunday').checked,
+            saturday_hours: parseFloat(document.getElementById('saturdayHours').value) || 0,
+            sunday_hours: parseFloat(document.getElementById('sundayHours').value) || 0,
+            opening_cleaning_time: parseFloat(document.getElementById('openingCleaningTime').value) || 0
         };
         
         try {

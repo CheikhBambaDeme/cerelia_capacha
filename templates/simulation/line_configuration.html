@@ -144,9 +144,10 @@
                     </div>
                     <div class="col-md-6">
                         <div class="mb-3">
-                            <label class="form-label">Reason</label>
-                            <input type="text" class="form-control" id="overrideReason" 
-                                   placeholder="e.g., Maintenance, Peak Season, Cleaning...">
+                            <label class="form-label">Override Name</label>
+                            <input type="text" class="form-control" id="overrideName" 
+                                   placeholder="e.g., Peak Season Config, Maintenance Mode...">
+                            <small class="text-muted">Optional name for selecting this scenario in simulations</small>
                         </div>
                     </div>
                 </div>
@@ -154,11 +155,18 @@
                 <div class="row">
                     <div class="col-md-6">
                         <div class="mb-3">
+                            <label class="form-label">Reason</label>
+                            <input type="text" class="form-control" id="overrideReason" 
+                                   placeholder="e.g., Maintenance, Peak Season, Cleaning...">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
                             <label class="form-label">Start Date *</label>
                             <input type="date" class="form-control" id="overrideStartDate" required>
                         </div>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-3">
                         <div class="mb-3">
                             <label class="form-label">End Date *</label>
                             <input type="date" class="form-control" id="overrideEndDate" required>
@@ -223,22 +231,59 @@
                             <label class="form-label">Weekend Days</label>
                             <div class="d-flex gap-3">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="overrideSaturday" onchange="updatePreview()">
+                                    <input class="form-check-input" type="checkbox" id="overrideSaturday" onchange="toggleWeekendHours(); updatePreview()">
                                     <label class="form-check-label" for="overrideSaturday">
                                         <span class="badge bg-success">Saturday</span>
                                     </label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="overrideSunday" onchange="updatePreview()">
+                                    <input class="form-check-input" type="checkbox" id="overrideSunday" onchange="toggleWeekendHours(); updatePreview()">
                                     <label class="form-check-label" for="overrideSunday">
                                         <span class="badge bg-danger">Sunday</span>
                                     </label>
                                 </div>
                             </div>
-                            <small class="text-muted">These flags are for display purposes. Set days to 6 or 7 for weekend work.</small>
                         </div>
                     </div>
                     <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Opening/Cleaning Time</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="overrideCleaningTime" 
+                                       value="0" min="0" max="20" step="0.5" onchange="updatePreview()">
+                                <span class="input-group-text">hours/week</span>
+                            </div>
+                            <small class="text-muted">Time subtracted from weekly hours</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Weekend Hours (shown when Saturday or Sunday selected) -->
+                <div class="row" id="weekendHoursRow" style="display: none;">
+                    <div class="col-md-6">
+                        <div class="mb-3" id="saturdayHoursContainer" style="display: none;">
+                            <label class="form-label"><span class="badge bg-success">Saturday</span> Hours</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="overrideSaturdayHours" 
+                                       value="8" min="0" max="24" step="0.5" onchange="updatePreview()">
+                                <span class="input-group-text">hours</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3" id="sundayHoursContainer" style="display: none;">
+                            <label class="form-label"><span class="badge bg-danger">Sunday</span> Hours</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="overrideSundayHours" 
+                                       value="8" min="0" max="24" step="0.5" onchange="updatePreview()">
+                                <span class="input-group-text">hours</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-12">
                         <div class="mb-3">
                             <label class="form-label">Configuration Preview</label>
                             <div class="alert alert-info mb-0 py-2">
@@ -477,11 +522,15 @@
                         ? `<span class="badge bg-info ms-1"><i class="bi bi-arrow-repeat"></i> Every ${o.recurrence_weeks || 1} week${(o.recurrence_weeks || 1) > 1 ? 's' : ''}</span>` 
                         : '';
                     
+                    const displayName = o.name || o.config_display;
+                    const nameBadge = o.name ? `<small class="text-primary d-block">${o.name}</small>` : '';
+                    
                     return `
                         <div class="override-card card ${statusClass}" style="min-width: 200px;">
                             <div class="card-body py-2 px-3">
                                 <div class="d-flex justify-content-between align-items-start">
                                     <div>
+                                        ${nameBadge}
                                         <span class="config-badge">${o.config_display}</span>
                                         <span class="badge bg-${statusClass === 'active' ? 'success' : statusClass === 'future' ? 'primary' : 'secondary'} ms-1">${statusText}</span>
                                         ${recurrentBadge}
@@ -535,12 +584,24 @@
         document.getElementById('recurrenceOptions').style.display = isRecurrent ? 'block' : 'none';
     }
 
+    function toggleWeekendHours() {
+        const saturday = document.getElementById('overrideSaturday').checked;
+        const sunday = document.getElementById('overrideSunday').checked;
+        
+        document.getElementById('weekendHoursRow').style.display = (saturday || sunday) ? 'flex' : 'none';
+        document.getElementById('saturdayHoursContainer').style.display = saturday ? 'block' : 'none';
+        document.getElementById('sundayHoursContainer').style.display = sunday ? 'block' : 'none';
+    }
+
     function updatePreview() {
         const shifts = parseInt(document.getElementById('overrideShifts').value) || 0;
         const hours = parseFloat(document.getElementById('overrideHours').value) || 0;
         const days = parseInt(document.getElementById('overrideDays').value) || 0;
         const saturday = document.getElementById('overrideSaturday').checked;
         const sunday = document.getElementById('overrideSunday').checked;
+        const saturdayHours = saturday ? (parseFloat(document.getElementById('overrideSaturdayHours').value) || 0) : 0;
+        const sundayHours = sunday ? (parseFloat(document.getElementById('overrideSundayHours').value) || 0) : 0;
+        const cleaningTime = parseFloat(document.getElementById('overrideCleaningTime').value) || 0;
         
         let configStr;
         if (shifts === 0) {
@@ -549,21 +610,30 @@
             configStr = `${shifts}×${hours}`;
             if (saturday && sunday) configStr += ' SS';
             else if (saturday) configStr += ' S';
+            else if (sunday) configStr += ' Su';
             configStr += ` ${days}d`;
+            if (cleaningTime > 0) configStr += ` ${cleaningTime}h`;
         }
         
-        const weeklyHours = shifts * hours * days;
+        // Calculate weekly hours: base + weekend - cleaning
+        const baseHours = shifts * hours * days;
+        const weekendHours = saturdayHours + sundayHours;
+        const weeklyHours = Math.max(0, baseHours + weekendHours - cleaningTime);
         
         document.getElementById('configPreview').textContent = configStr;
-        document.getElementById('weeklyHoursPreview').textContent = weeklyHours;
+        document.getElementById('weeklyHoursPreview').textContent = weeklyHours.toFixed(1);
     }
 
-    function applyPreset(shifts, hours, days, saturday, sunday) {
+    function applyPreset(shifts, hours, days, saturday, sunday, satHours = 0, sunHours = 0, cleaningTime = 0) {
         document.getElementById('overrideShifts').value = shifts;
         document.getElementById('overrideHours').value = hours;
         document.getElementById('overrideDays').value = days;
         document.getElementById('overrideSaturday').checked = saturday;
         document.getElementById('overrideSunday').checked = sunday;
+        document.getElementById('overrideSaturdayHours').value = satHours || hours;
+        document.getElementById('overrideSundayHours').value = sunHours || hours;
+        document.getElementById('overrideCleaningTime').value = cleaningTime;
+        toggleWeekendHours();
         updatePreview();
     }
 
@@ -577,13 +647,17 @@
         } else {
             document.getElementById('overrideLine').value = '';
         }
+        document.getElementById('overrideName').value = '';
         document.getElementById('overrideReason').value = '';
         document.getElementById('overrideStartDate').value = '';
         document.getElementById('overrideEndDate').value = '';
         document.getElementById('overrideRecurrent').checked = false;
         document.getElementById('overrideRecurrenceWeeks').value = 1;
         document.getElementById('recurrenceOptions').style.display = 'none';
-        applyPreset(3, 8, 5, false, false);
+        document.getElementById('overrideCleaningTime').value = 0;
+        document.getElementById('overrideSaturdayHours').value = 8;
+        document.getElementById('overrideSundayHours').value = 8;
+        applyPreset(3, 8, 5, false, false, 0, 0, 0);
         
         overrideModal.show();
     }
@@ -595,6 +669,7 @@
         document.getElementById('overrideId').value = override.id;
         document.getElementById('modalTitle').textContent = 'Edit Configuration Override';
         document.getElementById('overrideLine').value = override.line;
+        document.getElementById('overrideName').value = override.name || '';
         document.getElementById('overrideReason').value = override.reason || '';
         document.getElementById('overrideStartDate').value = override.start_date;
         document.getElementById('overrideEndDate').value = override.end_date;
@@ -603,9 +678,13 @@
         document.getElementById('overrideDays').value = override.days_per_week || 5;
         document.getElementById('overrideSaturday').checked = override.include_saturday;
         document.getElementById('overrideSunday').checked = override.include_sunday;
+        document.getElementById('overrideSaturdayHours').value = override.saturday_hours || 8;
+        document.getElementById('overrideSundayHours').value = override.sunday_hours || 8;
+        document.getElementById('overrideCleaningTime').value = override.opening_cleaning_time || 0;
         document.getElementById('overrideRecurrent').checked = override.is_recurrent || false;
         document.getElementById('overrideRecurrenceWeeks').value = override.recurrence_weeks || 1;
         toggleRecurrenceOptions();
+        toggleWeekendHours();
         updatePreview();
         
         overrideModal.show();
@@ -613,15 +692,22 @@
 
     async function saveOverride() {
         const overrideId = document.getElementById('overrideId').value;
+        const saturday = document.getElementById('overrideSaturday').checked;
+        const sunday = document.getElementById('overrideSunday').checked;
+        
         const data = {
             line: parseInt(document.getElementById('overrideLine').value),
+            name: document.getElementById('overrideName').value.trim(),
             start_date: document.getElementById('overrideStartDate').value,
             end_date: document.getElementById('overrideEndDate').value,
             shifts_per_day: parseInt(document.getElementById('overrideShifts').value),
             hours_per_shift: parseFloat(document.getElementById('overrideHours').value),
             days_per_week: parseInt(document.getElementById('overrideDays').value),
-            include_saturday: document.getElementById('overrideSaturday').checked,
-            include_sunday: document.getElementById('overrideSunday').checked,
+            include_saturday: saturday,
+            include_sunday: sunday,
+            saturday_hours: saturday ? parseFloat(document.getElementById('overrideSaturdayHours').value) : 0,
+            sunday_hours: sunday ? parseFloat(document.getElementById('overrideSundayHours').value) : 0,
+            opening_cleaning_time: parseFloat(document.getElementById('overrideCleaningTime').value) || 0,
             reason: document.getElementById('overrideReason').value,
             is_recurrent: document.getElementById('overrideRecurrent').checked,
             recurrence_weeks: document.getElementById('overrideRecurrent').checked ? parseInt(document.getElementById('overrideRecurrenceWeeks').value) : null,

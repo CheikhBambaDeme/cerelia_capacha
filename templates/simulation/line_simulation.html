@@ -689,30 +689,63 @@
             
             // Preserve existing selections for this scenario
             const existingSelections = {};
+            const existingOverrideSelections = {};
             container.querySelectorAll('select[data-line-id]').forEach(select => {
                 existingSelections[select.dataset.lineId] = select.value;
+            });
+            container.querySelectorAll('select[data-override-select]').forEach(select => {
+                existingOverrideSelections[select.dataset.lineId] = select.value;
             });
             
             container.innerHTML = selectedOptions.map(opt => {
                 const line = allLines.find(l => l.id == opt.value);
                 const hasOverrides = line && line.active_overrides_count > 0;
+                const overrides = line && line.available_overrides ? line.available_overrides : [];
                 // Check if we have an existing selection for this line in this scenario
                 const existingValue = existingSelections[opt.value];
+                const existingOverrideValue = existingOverrideSelections[opt.value];
+                
+                // Build override options HTML
+                let overrideOptionsHtml = '';
+                if (overrides.length > 0) {
+                    const showOverrideDropdown = existingValue === 'override' || (!existingValue && hasOverrides);
+                    overrideOptionsHtml = `
+                        <div class="override-select-container mt-1" id="overrideSelect_${scenarioId}_${opt.value}" style="display: ${showOverrideDropdown ? 'block' : 'none'};">
+                            <select class="form-select form-select-sm" data-override-select="true" data-line-id="${opt.value}" data-scenario-id="${scenarioId}">
+                                <option value="auto" ${!existingOverrideValue || existingOverrideValue === 'auto' ? 'selected' : ''}>📅 Auto (date-based)</option>
+                                ${overrides.map(o => `
+                                    <option value="${o.id}" ${existingOverrideValue == o.id ? 'selected' : ''}>
+                                        ${o.name ? o.name + ' - ' : ''}${o.config_display} (${o.weekly_hours}h/wk)
+                                    </option>
+                                `).join('')}
+                            </select>
+                            <small class="text-muted">Select specific scenario or use auto date-based</small>
+                        </div>
+                    `;
+                }
                 
                 return `
                     <div class="mb-2">
-                        <label class="form-label small">${line ? line.name : 'Line'} ${hasOverrides ? '<span class="badge bg-warning text-dark"><i class="bi bi-wrench"></i> Has Overrides</span>' : ''}</label>
-                        <select class="form-select form-select-sm" data-line-id="${opt.value}" data-scenario-id="${scenarioId}">
-                            <option value="override" ${existingValue === 'override' || (!existingValue && hasOverrides) ? 'selected' : ''}>🔧 Use Override Config (date-based)</option>
+                        <label class="form-label small">${line ? line.name : 'Line'} ${hasOverrides ? '<span class="badge bg-warning text-dark"><i class="bi bi-wrench"></i> ' + overrides.length + ' Override(s)</span>' : ''}</label>
+                        <select class="form-select form-select-sm" data-line-id="${opt.value}" data-scenario-id="${scenarioId}" onchange="toggleOverrideSelect(this, '${scenarioId}', '${opt.value}')">
+                            <option value="override" ${existingValue === 'override' || (!existingValue && hasOverrides) ? 'selected' : ''}>🔧 Use Override Config</option>
                             ${shiftConfigs.map(sc => {
                                 const isSelected = existingValue ? existingValue == sc.id : (!hasOverrides && line && line.default_shift_config == sc.id);
                                 return `<option value="${sc.id}" ${isSelected ? 'selected' : ''}>${sc.name}</option>`;
                             }).join('')}
                         </select>
+                        ${overrideOptionsHtml}
                     </div>
                 `;
             }).join('');
         });
+    }
+    
+    function toggleOverrideSelect(selectElement, scenarioId, lineId) {
+        const overrideContainer = document.getElementById(`overrideSelect_${scenarioId}_${lineId}`);
+        if (overrideContainer) {
+            overrideContainer.style.display = selectElement.value === 'override' ? 'block' : 'none';
+        }
     }
 
     function addScenario() {
@@ -806,12 +839,27 @@
                 const scenarioId = scenarioCard.dataset.scenarioId;
                 
                 // Get shift configs for this scenario
-                const shiftConfigSelects = scenarioCard.querySelectorAll('.shift-config-container select');
-                const lineShiftConfigs = Array.from(shiftConfigSelects).map(select => ({
-                    line_id: parseInt(select.dataset.lineId),
-                    shift_config_id: select.value === 'override' ? null : parseInt(select.value),
-                    use_override: select.value === 'override'
-                }));
+                const shiftConfigSelects = scenarioCard.querySelectorAll('.shift-config-container select[data-line-id]:not([data-override-select])');
+                const lineShiftConfigs = Array.from(shiftConfigSelects).map(select => {
+                    const lineId = select.dataset.lineId;
+                    const useOverride = select.value === 'override';
+                    
+                    // Check if there's a specific override selected
+                    let overrideId = null;
+                    if (useOverride) {
+                        const overrideSelect = scenarioCard.querySelector(`select[data-override-select][data-line-id="${lineId}"]`);
+                        if (overrideSelect && overrideSelect.value !== 'auto') {
+                            overrideId = parseInt(overrideSelect.value);
+                        }
+                    }
+                    
+                    return {
+                        line_id: parseInt(lineId),
+                        shift_config_id: useOverride ? null : parseInt(select.value),
+                        use_override: useOverride,
+                        override_id: overrideId  // Specific override ID if selected, null for auto
+                    };
+                });
 
                 let requestData;
                 let apiEndpoint;

@@ -18,11 +18,14 @@ class SiteSerializer(serializers.ModelSerializer):
 
 class ShiftConfigurationSerializer(serializers.ModelSerializer):
     weekly_hours = serializers.ReadOnlyField()
+    config_display = serializers.ReadOnlyField()
     
     class Meta:
         model = ShiftConfiguration
         fields = ['id', 'name', 'description', 'shifts_per_day', 'hours_per_shift',
-                  'days_per_week', 'includes_saturday', 'includes_sunday', 'weekly_hours']
+                  'days_per_week', 'includes_saturday', 'includes_sunday',
+                  'saturday_hours', 'sunday_hours', 'opening_cleaning_time',
+                  'weekly_hours', 'config_display']
 
 
 class ProductionLineSerializer(serializers.ModelSerializer):
@@ -33,13 +36,14 @@ class ProductionLineSerializer(serializers.ModelSerializer):
     )
     default_weekly_hours = serializers.ReadOnlyField()
     active_overrides_count = serializers.SerializerMethodField()
+    available_overrides = serializers.SerializerMethodField()
     
     class Meta:
         model = ProductionLine
         fields = ['id', 'name', 'code', 'site', 'site_name', 'site_code', 'default_shift_config',
                   'default_shift_config_name', 'base_capacity_per_hour', 
                   'efficiency_factor', 'is_active', 'default_weekly_hours',
-                  'active_overrides_count']
+                  'active_overrides_count', 'available_overrides']
     
     def get_active_overrides_count(self, obj):
         from datetime import date
@@ -47,20 +51,40 @@ class ProductionLineSerializer(serializers.ModelSerializer):
             is_active=True,
             end_date__gte=date.today()
         ).count()
+    
+    def get_available_overrides(self, obj):
+        """Get all active overrides for the line, including future ones"""
+        from datetime import date
+        overrides = obj.config_overrides.filter(
+            is_active=True,
+            end_date__gte=date.today()
+        ).order_by('start_date')
+        return [{
+            'id': o.id,
+            'name': o.name,
+            'display_name': o.display_name,
+            'config_display': o.config_display,
+            'start_date': o.start_date.isoformat(),
+            'end_date': o.end_date.isoformat(),
+            'weekly_hours': o.weekly_hours,
+            'is_recurrent': o.is_recurrent,
+        } for o in overrides]
 
 
 class LineConfigOverrideSerializer(serializers.ModelSerializer):
     line_name = serializers.CharField(source='line.name', read_only=True)
     site_name = serializers.CharField(source='line.site.name', read_only=True)
     config_display = serializers.ReadOnlyField()
+    display_name = serializers.ReadOnlyField()
     weekly_hours = serializers.ReadOnlyField()
     
     class Meta:
         model = LineConfigOverride
-        fields = ['id', 'line', 'line_name', 'site_name', 'start_date', 'end_date',
+        fields = ['id', 'name', 'line', 'line_name', 'site_name', 'start_date', 'end_date',
                   'shifts_per_day', 'hours_per_shift', 'days_per_week', 'include_saturday', 
-                  'include_sunday', 'reason', 'is_recurrent', 'recurrence_weeks', 'is_active', 'config_display', 
-                  'weekly_hours', 'created_at']
+                  'include_sunday', 'saturday_hours', 'sunday_hours', 'opening_cleaning_time',
+                  'reason', 'is_recurrent', 'recurrence_weeks', 'is_active', 'config_display', 
+                  'display_name', 'weekly_hours', 'created_at']
 
 
 class ClientSerializer(serializers.ModelSerializer):
@@ -249,12 +273,14 @@ class SimulationCategorySerializer(serializers.ModelSerializer):
 
 class CustomShiftConfigurationSerializer(serializers.ModelSerializer):
     weekly_hours = serializers.ReadOnlyField()
+    config_display = serializers.ReadOnlyField()
     
     class Meta:
         model = CustomShiftConfiguration
         fields = ['id', 'name', 'description', 'shifts_per_day', 'hours_per_shift',
-                  'days_per_week', 'includes_saturday', 'includes_sunday', 
-                  'weekly_hours', 'is_custom', 'created_at', 'updated_at']
+                  'days_per_week', 'includes_saturday', 'includes_sunday',
+                  'saturday_hours', 'sunday_hours', 'opening_cleaning_time',
+                  'weekly_hours', 'config_display', 'is_custom', 'created_at', 'updated_at']
         read_only_fields = ['is_custom', 'created_at', 'updated_at']
 
 
