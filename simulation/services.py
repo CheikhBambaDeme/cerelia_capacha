@@ -18,14 +18,16 @@ from .models import (
 _line_cache = {}
 _shift_config_cache = {}
 _product_ids_cache = {}
+_override_cache = {}
 
 
 def clear_caches():
     """Clear all service caches - call at the start of each request"""
-    global _line_cache, _shift_config_cache, _product_ids_cache
+    global _line_cache, _shift_config_cache, _product_ids_cache, _override_cache
     _line_cache = {}
     _shift_config_cache = {}
     _product_ids_cache = {}
+    _override_cache = {}
 
 
 def get_week_start(date):
@@ -99,6 +101,19 @@ def _get_shift_config(shift_config_id: int) -> Optional[ShiftConfiguration]:
         return None
 
 
+def _get_override_by_id(override_id: int) -> Optional[LineConfigOverride]:
+    """Get override config from cache or database"""
+    if override_id in _override_cache:
+        return _override_cache[override_id]
+    
+    try:
+        override = LineConfigOverride.objects.get(id=override_id)
+        _override_cache[override_id] = override
+        return override
+    except LineConfigOverride.DoesNotExist:
+        return None
+
+
 def _get_config_for_date_from_prefetched(line, target_date, prefetched_overrides):
     """
     Get configuration for a date using prefetched overrides.
@@ -165,7 +180,7 @@ def _get_product_ids_for_lines(line_ids: list) -> Set[int]:
 
 
 def calculate_daily_capacity(line_ids: list, shift_configs: dict, for_date, 
-                             lines_dict: dict = None) -> Decimal:
+                             lines_dict: dict = None, override_dict: dict = None) -> Decimal:
     """
     Calculate total daily capacity for given lines with their shift configurations
     
@@ -174,12 +189,16 @@ def calculate_daily_capacity(line_ids: list, shift_configs: dict, for_date,
         shift_configs: Dict mapping line_id -> shift_config_id (manual override from UI)
         for_date: Date to calculate capacity for
         lines_dict: Optional pre-loaded lines dictionary for batch processing
+        override_dict: Optional dict mapping line_id -> specific override_id to use
     
     Returns:
         Total daily capacity in units
     """
     total_capacity = Decimal('0')
     day_of_week = for_date.weekday()  # 0=Monday, 5=Saturday, 6=Sunday
+    
+    if override_dict is None:
+        override_dict = {}
     
     # Use provided lines_dict or fetch if not provided
     if lines_dict is None:
@@ -191,9 +210,30 @@ def calculate_daily_capacity(line_ids: list, shift_configs: dict, for_date,
             continue
             
         shift_config_id = shift_configs.get(line_id)
+        specific_override_id = override_dict.get(line_id)
         
         # Get the configuration to use
-        if shift_config_id:
+        if specific_override_id:
+            # User selected a specific override scenario
+            override = _get_override_by_id(specific_override_id)
+            if override:
+                shifts_per_day = override.shifts_per_day
+                hours_per_shift = override.hours_per_shift
+                includes_saturday = override.include_saturday
+                includes_sunday = override.include_sunday
+            else:
+                # Fall back to date-based config
+                config_data = _get_config_for_date_from_prefetched(
+                    line, for_date, getattr(line, 'prefetched_overrides', [])
+                )
+                if config_data:
+                    shifts_per_day = config_data['shifts_per_day']
+                    hours_per_shift = config_data['hours_per_shift']
+                    includes_saturday = config_data['include_saturday']
+                    includes_sunday = config_data['include_sunday']
+                else:
+                    continue
+        elif shift_config_id:
             config = _get_shift_config(shift_config_id)
             if config:
                 shifts_per_day = config.shifts_per_day
@@ -237,13 +277,16 @@ def calculate_daily_capacity(line_ids: list, shift_configs: dict, for_date,
     
     return total_capacity
 
-
-def calculate_capacity_per_day(line_ids: list, shift_configs: dict, days: list) -> dict:
+def calculate_capacity_per_day(line_ids: list, shift_configs: dict, days: list, 
+                                override_dict: dict = None) -> dict:
     """
     Calculate capacity for each day, considering LineConfigOverrides.
     Optimized: Pre-loads all lines with configs once.
     """
     capacity_by_day = {}
+    
+    if override_dict is None:
+        override_dict = {}
     
     if not days:
         return capacity_by_day
@@ -254,7 +297,8 @@ def calculate_capacity_per_day(line_ids: list, shift_configs: dict, days: list) 
     lines_dict = _get_lines_with_configs(line_ids, start_date, end_date)
     
     for day in days:
-        capacity = calculate_daily_capacity(line_ids, shift_configs, for_date=day, lines_dict=lines_dict)
+        capacity = calculate_daily_capacity(line_ids, shift_configs, for_date=day, 
+                                            lines_dict=lines_dict, override_dict=override_dict)
         capacity_by_day[day] = capacity
     
     return capacity_by_day
@@ -301,7 +345,7 @@ def get_client_demand_daily(client_id: int, line_ids: list, start_date, end_date
 
 
 def calculate_weekly_capacity(line_ids: list, shift_configs: dict, for_date=None,
-                               lines_dict: dict = None) -> Decimal:
+                               lines_dict: dict = None, override_dict: dict = None) -> Decimal:
     """
     Calculate total weekly capacity for given lines with their shift configurations
     
@@ -310,11 +354,15 @@ def calculate_weekly_capacity(line_ids: list, shift_configs: dict, for_date=None
         shift_configs: Dict mapping line_id -> shift_config_id (manual override from UI)
         for_date: Optional date to check for LineConfigOverride entries
         lines_dict: Optional pre-loaded lines dictionary for batch processing
+        override_dict: Optional dict mapping line_id -> specific override_id to use
     
     Returns:
         Total weekly capacity in units
     """
     total_capacity = Decimal('0')
+    
+    if override_dict is None:
+        override_dict = {}
     
     # Use provided lines_dict or fetch if not provided
     if lines_dict is None:
@@ -328,7 +376,17 @@ def calculate_weekly_capacity(line_ids: list, shift_configs: dict, for_date=None
         # First check if there's a UI-selected shift config override
         shift_config_id = shift_configs.get(line_id)
         
-        if shift_config_id:
+        # Check if a specific override was selected for this line
+        specific_override_id = override_dict.get(line_id)
+        
+        if specific_override_id:
+            # User selected a specific override scenario - use it regardless of dates
+            override = _get_override_by_id(specific_override_id)
+            if override:
+                weekly_capacity = line.get_weekly_capacity_from_override(override)
+            else:
+                weekly_capacity = line.get_weekly_capacity(for_date=for_date)
+        elif shift_config_id:
             # User explicitly selected a shift config in the simulation UI
             shift_config = _get_shift_config(shift_config_id)
             if shift_config:
@@ -344,7 +402,8 @@ def calculate_weekly_capacity(line_ids: list, shift_configs: dict, for_date=None
     return total_capacity
 
 
-def calculate_capacity_per_week(line_ids: list, shift_configs: dict, weeks: list) -> dict:
+def calculate_capacity_per_week(line_ids: list, shift_configs: dict, weeks: list, 
+                                 override_dict: dict = None) -> dict:
     """
     Calculate capacity for each week, considering LineConfigOverrides.
     Optimized: Pre-loads all lines with configs once.
@@ -353,11 +412,15 @@ def calculate_capacity_per_week(line_ids: list, shift_configs: dict, weeks: list
         line_ids: List of production line IDs
         shift_configs: Dict mapping line_id -> shift_config_id (manual override from UI)
         weeks: List of week start dates
+        override_dict: Optional dict mapping line_id -> specific override_id to use
     
     Returns:
         Dict mapping week_start_date -> total_capacity
     """
     capacity_by_week = {}
+    
+    if override_dict is None:
+        override_dict = {}
     
     if not weeks:
         return capacity_by_week
@@ -370,7 +433,8 @@ def calculate_capacity_per_week(line_ids: list, shift_configs: dict, weeks: list
     for week_start in weeks:
         # Use the middle of the week for override checking
         week_date = week_start + timedelta(days=3)
-        capacity = calculate_weekly_capacity(line_ids, shift_configs, for_date=week_date, lines_dict=lines_dict)
+        capacity = calculate_weekly_capacity(line_ids, shift_configs, for_date=week_date, 
+                                             lines_dict=lines_dict, override_dict=override_dict)
         capacity_by_week[week_start] = capacity
     
     return capacity_by_week
@@ -742,10 +806,15 @@ def run_line_simulation(line_ids: list, shift_configs: list,
     
     # Convert shift_configs to dict
     # When use_override is True, shift_config_id will be None to use date-based overrides
+    # When override_id is specified, it will use that specific override
     config_dict = {}
+    override_dict = {}  # Stores specific override IDs for lines
     for sc in shift_configs:
         if sc.get('use_override', False):
             config_dict[sc['line_id']] = None  # Will trigger date-based override lookup
+            # Check if a specific override was selected
+            if sc.get('override_id'):
+                override_dict[sc['line_id']] = sc['override_id']
         else:
             config_dict[sc['line_id']] = sc.get('shift_config_id')
     
@@ -769,7 +838,8 @@ def run_line_simulation(line_ids: list, shift_configs: list,
             overlay_client_codes, overlay_data,
             combine_clients=combine_clients, client_ids=client_ids,
             demand_modifications=demand_modifications,
-            product_ids=product_ids
+            product_ids=product_ids,
+            override_dict=override_dict
         )
     else:
         return _run_line_simulation_weekly(
@@ -778,7 +848,8 @@ def run_line_simulation(line_ids: list, shift_configs: list,
             overlay_client_codes, overlay_data,
             combine_clients=combine_clients, client_ids=client_ids,
             demand_modifications=demand_modifications,
-            product_ids=product_ids
+            product_ids=product_ids,
+            override_dict=override_dict
         )
 
 
@@ -787,10 +858,13 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
                                  overlay_client_codes, overlay_data,
                                  combine_clients=False, client_ids=None,
                                  demand_modifications=None,
-                                 product_ids=None):
+                                 product_ids=None,
+                                 override_dict=None):
     """Weekly granularity simulation. Optimized with batch loading."""
     if product_ids is None:
         product_ids = []
+    if override_dict is None:
+        override_dict = {}
     
     # Get weeks in range
     weeks = get_weeks_in_range(start_date, end_date)
@@ -799,7 +873,7 @@ def _run_line_simulation_weekly(line_ids, config_dict, start_date, end_date,
     lines_dict = _get_lines_with_configs(line_ids, start_date, end_date + timedelta(days=6))
     
     # Calculate capacity per week (considers overrides)
-    capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks)
+    capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks, override_dict=override_dict)
     
     # Get demand data - handle multiple product_ids
     if len(product_ids) > 1:
@@ -957,10 +1031,13 @@ def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
                                 overlay_client_codes, overlay_data,
                                 combine_clients=False, client_ids=None,
                                 demand_modifications=None,
-                                product_ids=None):
+                                product_ids=None,
+                                override_dict=None):
     """Daily granularity simulation. Optimized with batch loading."""
     if product_ids is None:
         product_ids = []
+    if override_dict is None:
+        override_dict = {}
     
     # Get days in range
     days = get_days_in_range(start_date, end_date)
@@ -969,7 +1046,7 @@ def _run_line_simulation_daily(line_ids, config_dict, start_date, end_date,
     lines_dict = _get_lines_with_configs(line_ids, start_date, end_date)
     
     # Calculate capacity per day (considers overrides)
-    capacity_by_day = calculate_capacity_per_day(line_ids, config_dict, days)
+    capacity_by_day = calculate_capacity_per_day(line_ids, config_dict, days, override_dict=override_dict)
     
     # Get demand data (distributed daily) - handle multiple product_ids
     if len(product_ids) > 1:
@@ -1136,16 +1213,19 @@ def run_new_client_simulation(line_ids: list, shift_configs: list,
     """
     # Convert shift_configs to dict - handle use_override flag
     config_dict = {}
+    override_dict = {}
     for sc in shift_configs:
         if sc.get('use_override', False):
             config_dict[sc['line_id']] = None
+            if sc.get('override_id'):
+                override_dict[sc['line_id']] = sc['override_id']
         else:
             config_dict[sc['line_id']] = sc.get('shift_config_id')
     
     weeks = get_weeks_in_range(start_date, end_date)
     
     # Calculate capacity per week (considers overrides)
-    capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks)
+    capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks, override_dict=override_dict)
     
     # Get base demand (all current demand)
     base_demand_data = get_demand_for_lines(line_ids, start_date, end_date)
@@ -1231,16 +1311,19 @@ def run_lost_client_simulation(line_ids: list, shift_configs: list,
     """
     # Convert shift_configs to dict - handle use_override flag
     config_dict = {}
+    override_dict = {}
     for sc in shift_configs:
         if sc.get('use_override', False):
             config_dict[sc['line_id']] = None
+            if sc.get('override_id'):
+                override_dict[sc['line_id']] = sc['override_id']
         else:
             config_dict[sc['line_id']] = sc.get('shift_config_id')
     
     weeks = get_weeks_in_range(start_date, end_date)
     
     # Calculate capacity per week (considers overrides)
-    capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks)
+    capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks, override_dict=override_dict)
     
     # Get base demand (all current demand)
     base_demand_data = get_demand_for_lines(line_ids, start_date, end_date)
@@ -1418,9 +1501,12 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
     
     # Convert shift_configs to dict
     config_dict = {}
+    override_dict = {}
     for sc in shift_configs:
         if sc.get('use_override', False):
             config_dict[sc['line_id']] = None
+            if sc.get('override_id'):
+                override_dict[sc['line_id']] = sc['override_id']
         else:
             config_dict[sc['line_id']] = sc.get('shift_config_id')
     
@@ -1450,7 +1536,8 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
             overlay_client_codes or [], overlay_data,
             combine_clients=combine_clients, client_ids=client_ids,
             demand_modifications=demand_modifications or [],
-            product_ids=product_ids
+            product_ids=product_ids,
+            override_dict=override_dict
         )
     else:
         return _run_category_simulation_weekly(
@@ -1459,7 +1546,8 @@ def run_category_simulation(simulation_category_id: int, shift_configs: list,
             overlay_client_codes or [], overlay_data,
             combine_clients=combine_clients, client_ids=client_ids,
             demand_modifications=demand_modifications or [],
-            product_ids=product_ids
+            product_ids=product_ids,
+            override_dict=override_dict
         )
 
 
@@ -1491,15 +1579,18 @@ def _run_category_simulation_weekly(line_ids, config_dict, start_date, end_date,
                                      overlay_client_codes, overlay_data,
                                      combine_clients=False, client_ids=None,
                                      demand_modifications=None,
-                                     product_ids=None):
+                                     product_ids=None,
+                                     override_dict=None):
     """Weekly granularity simulation for category-based workflow."""
     if product_ids is None:
         product_ids = []
+    if override_dict is None:
+        override_dict = {}
     
     weeks = get_weeks_in_range(start_date, end_date)
     
     lines_dict = _get_lines_with_configs(line_ids, start_date, end_date + timedelta(days=6))
-    capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks)
+    capacity_by_week = calculate_capacity_per_week(line_ids, config_dict, weeks, override_dict=override_dict)
     
     # Determine which product IDs to query
     # If product filter is applied (product_ids has items), use those
@@ -1629,15 +1720,18 @@ def _run_category_simulation_daily(line_ids, config_dict, start_date, end_date,
                                     overlay_client_codes, overlay_data,
                                     combine_clients=False, client_ids=None,
                                     demand_modifications=None,
-                                    product_ids=None):
+                                    product_ids=None,
+                                    override_dict=None):
     """Daily granularity simulation for category-based workflow."""
     if product_ids is None:
         product_ids = []
+    if override_dict is None:
+        override_dict = {}
     
     days = get_days_in_range(start_date, end_date)
     
     lines_dict = _get_lines_with_configs(line_ids, start_date, end_date)
-    capacity_by_day = calculate_capacity_per_day(line_ids, config_dict, days)
+    capacity_by_day = calculate_capacity_per_day(line_ids, config_dict, days, override_dict=override_dict)
     
     # Determine which product IDs to query
     # If product filter is applied (product_ids has items), use those

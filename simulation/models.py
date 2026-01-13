@@ -35,10 +35,62 @@ class ShiftConfiguration(models.Model):
     includes_saturday = models.BooleanField(default=False)
     includes_sunday = models.BooleanField(default=False)
     
+    # Weekend hours - separate from weekday hours
+    saturday_hours = models.DecimalField(
+        max_digits=4, 
+        decimal_places=2, 
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(24)],
+        help_text='Total hours worked on Saturday (if included)'
+    )
+    sunday_hours = models.DecimalField(
+        max_digits=4, 
+        decimal_places=2, 
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(24)],
+        help_text='Total hours worked on Sunday (if included)'
+    )
+    
+    # Opening and cleaning time to subtract from weekly hours
+    opening_cleaning_time = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text='Hours to subtract for opening/cleaning time'
+    )
+    
     # Calculated weekly hours (for reference)
     @property
     def weekly_hours(self):
-        return float(self.shifts_per_day * self.hours_per_shift * self.days_per_week)
+        # Weekday hours: shifts_per_day * hours_per_shift * days_per_week
+        base_hours = float(self.shifts_per_day * self.hours_per_shift * self.days_per_week)
+        # Add weekend hours if included
+        weekend_hours = 0
+        if self.includes_saturday:
+            weekend_hours += float(self.saturday_hours)
+        if self.includes_sunday:
+            weekend_hours += float(self.sunday_hours)
+        # Subtract opening/cleaning time
+        total = base_hours + weekend_hours - float(self.opening_cleaning_time)
+        return max(0, total)
+    
+    @property
+    def config_display(self):
+        """Display format like '3x8 SS 5d 6h' (3 shifts, 8h, Sat+Sun, 5 days, 6h cleaning)"""
+        weekend = ''
+        if self.includes_saturday and self.includes_sunday:
+            weekend = ' SS'
+        elif self.includes_saturday:
+            weekend = ' S'
+        elif self.includes_sunday:
+            weekend = ' Su'
+        
+        cleaning = ''
+        if self.opening_cleaning_time > 0:
+            cleaning = f' {int(self.opening_cleaning_time)}h'
+        
+        return f"{self.shifts_per_day}x{int(self.hours_per_shift)}{weekend} {self.days_per_week}d{cleaning}"
     
     class Meta:
         ordering = ['name']
@@ -173,6 +225,15 @@ class ProductionLine(models.Model):
             return 0
         weekly_hours = Decimal(str(config.weekly_hours))
         return float(self.base_capacity_per_hour * self.efficiency_factor * weekly_hours)
+    
+    def get_weekly_capacity_from_override(self, override):
+        """Calculate weekly capacity using a specific override configuration"""
+        from decimal import Decimal
+        
+        if not override:
+            return 0
+        weekly_hours = Decimal(str(override.weekly_hours))
+        return float(self.base_capacity_per_hour * self.efficiency_factor * weekly_hours)
 
 
 class LineConfigOverride(models.Model):
@@ -185,6 +246,13 @@ class LineConfigOverride(models.Model):
         ProductionLine,
         on_delete=models.CASCADE,
         related_name='config_overrides'
+    )
+    
+    # Override name/scenario for selection in simulations
+    name = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text='Optional name for this override scenario (e.g., "Peak Season Config", "Maintenance Mode")'
     )
     
     # Date range for this override
@@ -216,6 +284,31 @@ class LineConfigOverride(models.Model):
         help_text='Include Sunday in production'
     )
     
+    # Weekend hours - separate from weekday hours
+    saturday_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(24)],
+        help_text='Total hours worked on Saturday (if included)'
+    )
+    sunday_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(24)],
+        help_text='Total hours worked on Sunday (if included)'
+    )
+    
+    # Opening and cleaning time to subtract from weekly hours
+    opening_cleaning_time = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text='Hours to subtract for opening/cleaning time'
+    )
+    
     # Metadata
     reason = models.CharField(
         max_length=200,
@@ -244,11 +337,12 @@ class LineConfigOverride(models.Model):
         ]
     
     def __str__(self):
-        return f"{self.line.name}: {self.config_display} ({self.start_date} to {self.end_date})"
+        name_part = f" ({self.name})" if self.name else ""
+        return f"{self.line.name}{name_part}: {self.config_display} ({self.start_date} to {self.end_date})"
     
     @property
     def config_display(self):
-        """Display format like '2x8 SS 5d' or '3x8 7d'"""
+        """Display format like '3x8 SS 5d 6h' (includes cleaning time)"""
         if self.shifts_per_day == 0:
             return 'Shutdown'
         weekend = ''
@@ -256,12 +350,34 @@ class LineConfigOverride(models.Model):
             weekend = ' SS'
         elif self.include_saturday:
             weekend = ' S'
-        return f"{self.shifts_per_day}x{int(self.hours_per_shift)}{weekend} {self.days_per_week}d"
+        elif self.include_sunday:
+            weekend = ' Su'
+        
+        cleaning = ''
+        if self.opening_cleaning_time > 0:
+            cleaning = f' {int(self.opening_cleaning_time)}h'
+        
+        return f"{self.shifts_per_day}x{int(self.hours_per_shift)}{weekend} {self.days_per_week}d{cleaning}"
+    
+    @property
+    def display_name(self):
+        """Return name if set, otherwise config_display"""
+        return self.name if self.name else self.config_display
     
     @property
     def weekly_hours(self):
         """Calculate total weekly hours for this configuration"""
-        return float(self.shifts_per_day * self.hours_per_shift * self.days_per_week)
+        # Weekday hours: shifts_per_day * hours_per_shift * days_per_week
+        base_hours = float(self.shifts_per_day * self.hours_per_shift * self.days_per_week)
+        # Add weekend hours if included
+        weekend_hours = 0
+        if self.include_saturday:
+            weekend_hours += float(self.saturday_hours)
+        if self.include_sunday:
+            weekend_hours += float(self.sunday_hours)
+        # Subtract opening/cleaning time
+        total = base_hours + weekend_hours - float(self.opening_cleaning_time)
+        return max(0, total)
 
 
 class Client(models.Model):
@@ -570,6 +686,31 @@ class CustomShiftConfiguration(models.Model):
     includes_saturday = models.BooleanField(default=False)
     includes_sunday = models.BooleanField(default=False)
     
+    # Weekend hours - separate from weekday hours
+    saturday_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(24)],
+        help_text='Total hours worked on Saturday (if included)'
+    )
+    sunday_hours = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(24)],
+        help_text='Total hours worked on Sunday (if included)'
+    )
+    
+    # Opening and cleaning time to subtract from weekly hours
+    opening_cleaning_time = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text='Hours to subtract for opening/cleaning time'
+    )
+    
     # User-created flag to distinguish from system defaults
     is_custom = models.BooleanField(default=True, editable=False)
     
@@ -578,7 +719,34 @@ class CustomShiftConfiguration(models.Model):
     
     @property
     def weekly_hours(self):
-        return float(self.shifts_per_day * self.hours_per_shift * self.days_per_week)
+        # Weekday hours: shifts_per_day * hours_per_shift * days_per_week
+        base_hours = float(self.shifts_per_day * self.hours_per_shift * self.days_per_week)
+        # Add weekend hours if included
+        weekend_hours = 0
+        if self.includes_saturday:
+            weekend_hours += float(self.saturday_hours)
+        if self.includes_sunday:
+            weekend_hours += float(self.sunday_hours)
+        # Subtract opening/cleaning time
+        total = base_hours + weekend_hours - float(self.opening_cleaning_time)
+        return max(0, total)
+    
+    @property
+    def config_display(self):
+        """Display format like '3x8 SS 5d 6h'"""
+        weekend = ''
+        if self.includes_saturday and self.includes_sunday:
+            weekend = ' SS'
+        elif self.includes_saturday:
+            weekend = ' S'
+        elif self.includes_sunday:
+            weekend = ' Su'
+        
+        cleaning = ''
+        if self.opening_cleaning_time > 0:
+            cleaning = f' {int(self.opening_cleaning_time)}h'
+        
+        return f"{self.shifts_per_day}x{int(self.hours_per_shift)}{weekend} {self.days_per_week}d{cleaning}"
     
     class Meta:
         verbose_name = 'Custom Shift Configuration'
@@ -591,13 +759,6 @@ class CustomShiftConfiguration(models.Model):
     def save(self, *args, **kwargs):
         """Auto-generate name based on configuration if not provided"""
         if not self.name:
-            weekend = ''
-            if self.includes_saturday and self.includes_sunday:
-                weekend = ' SS'
-            elif self.includes_saturday:
-                weekend = ' S'
-            elif self.includes_sunday:
-                weekend = ' Sun'
-            self.name = f"{self.shifts_per_day}x{int(self.hours_per_shift)}{weekend} {self.days_per_week}d"
+            self.name = self.config_display
         super().save(*args, **kwargs)
 
