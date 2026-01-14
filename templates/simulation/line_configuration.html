@@ -355,6 +355,40 @@
         </div>
     </div>
 </div>
+<!-- Edit Cadency Modal -->
+<div class="modal fade" id="editCadencyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-speedometer"></i> Edit Line Cadency</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="cadencyLineId">
+                
+                <div class="mb-3">
+                    <label class="form-label">Base Capacity per Hour *</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="cadencyValue" 
+                               min="0" step="1" value="0">
+                        <span class="input-group-text">units/hour</span>
+                    </div>
+                    <small class="text-muted">The base production capacity of this line per hour.</small>
+                </div>
+                
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> Changing the cadency will affect all capacity calculations for this line.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveCadency()">
+                    <i class="bi bi-check"></i> Save Cadency
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -364,10 +398,12 @@
     let sites = [];
     let overrideModal = null;
     let efficiencyModal = null;
+    let cadencyModal = null;
 
     document.addEventListener('DOMContentLoaded', async function() {
         overrideModal = new bootstrap.Modal(document.getElementById('addOverrideModal'));
         efficiencyModal = new bootstrap.Modal(document.getElementById('editEfficiencyModal'));
+        cadencyModal = new bootstrap.Modal(document.getElementById('editCadencyModal'));
         
         await loadData();
         
@@ -474,6 +510,9 @@
                             </span>
                             <button class="btn btn-sm btn-outline-secondary me-1" onclick="openEditEfficiency(${line.id}, ${line.efficiency_factor})">
                                 <i class="bi bi-speedometer2"></i> Edit Efficiency
+                            </button>
+                            <button class="btn btn-sm btn-outline-info me-1" onclick="openEditCadency(${line.id}, ${line.base_capacity_per_hour})">
+                                <i class="bi bi-speedometer"></i> Edit Cadency
                             </button>
                             <button class="btn btn-sm btn-outline-primary" onclick="openAddOverride(${line.id})">
                                 <i class="bi bi-plus"></i> Add Override
@@ -822,6 +861,40 @@
         } catch (error) {
             console.error('Error saving efficiency:', error);
             alert('Error saving efficiency');
+        }
+    }
+
+    function openEditCadency(lineId, currentCadency) {
+        document.getElementById('cadencyLineId').value = lineId;
+        document.getElementById('cadencyValue').value = currentCadency || 0;
+        cadencyModal.show();
+    }
+
+    async function saveCadency() {
+        const lineId = document.getElementById('cadencyLineId').value;
+        const cadencyValue = parseFloat(document.getElementById('cadencyValue').value);
+        
+        if (isNaN(cadencyValue) || cadencyValue < 0) {
+            alert('Please enter a valid cadency (must be 0 or greater)');
+            return;
+        }
+        
+        try {
+            await fetch(`/api/lines/${lineId}/`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({ base_capacity_per_hour: cadencyValue })
+            });
+            
+            cadencyModal.hide();
+            await loadData();
+            alert('Cadency updated successfully');
+        } catch (error) {
+            console.error('Error saving cadency:', error);
+            alert('Error saving cadency');
         }
     }
 </script>
