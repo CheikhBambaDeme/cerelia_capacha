@@ -219,22 +219,20 @@
                 
                 <div class="card bg-light mb-3">
                     <div class="card-body p-2">
-                        <div class="row mb-2">
-                            <div class="col-6">
-                                <label class="form-label small mb-1">Week</label>
-                                <select class="form-select form-select-sm" id="stockWeekSelect">
-                                    <option value="">Select week...</option>
-                                </select>
-                            </div>
-                            <div class="col-6">
-                                <label class="form-label small mb-1">Units to Add</label>
-                                <input type="number" class="form-control form-control-sm" id="stockUnits" value="0" step="100">
-                            </div>
+                        <div class="mb-2">
+                            <label class="form-label small mb-1">Select Week(s)</label>
+                            <select class="form-select form-select-sm" id="stockWeekSelect" multiple size="4">
+                                <option value="">Run simulation first...</option>
+                            </select>
+                            <small class="text-muted">Hold Ctrl to select multiple weeks</small>
+                        </div>
+                        <div id="stockWeekUnitsContainer" class="mb-2" style="display: none;">
+                            <!-- Dynamic week/units inputs will appear here -->
                         </div>
                         <small class="text-muted d-block mb-2"><i class="bi bi-info-circle"></i> Positive = add to this week (subtract from next), Negative = remove from this week (add to next)</small>
                         <div class="d-flex gap-1">
-                            <button class="btn btn-sm btn-outline-success flex-grow-1" id="stockAddBtn" onclick="addStockAdjustment()">
-                                <i class="bi bi-plus-lg"></i> Add Stock Adjustment
+                            <button class="btn btn-sm btn-outline-success flex-grow-1" id="stockAddBtn" onclick="addStockAdjustments()">
+                                <i class="bi bi-plus-lg"></i> Add Modification
                             </button>
                             <button class="btn btn-sm btn-outline-secondary" id="stockCancelBtn" onclick="cancelEditStockAdjustment()" style="display: none;">
                                 <i class="bi bi-x-lg"></i>
@@ -255,28 +253,20 @@
                 
                 <div class="card bg-light mb-3">
                     <div class="card-body p-2">
-                        <div class="row mb-2">
-                            <div class="col-6">
-                                <label class="form-label small mb-1">Reduce Week (Peak)</label>
-                                <select class="form-select form-select-sm" id="superChillReduceWeek">
-                                    <option value="">Select week...</option>
-                                </select>
-                            </div>
-                            <div class="col-6">
-                                <label class="form-label small mb-1">Increase Week (Pre-prod)</label>
-                                <select class="form-select form-select-sm" id="superChillIncreaseWeek">
-                                    <option value="">Select week...</option>
-                                </select>
-                            </div>
-                        </div>
                         <div class="mb-2">
-                            <label class="form-label small mb-1">Units to Transfer</label>
-                            <input type="number" class="form-control form-control-sm" id="superChillUnits" value="0" step="100">
+                            <label class="form-label small mb-1">Select Reduce Week(s) (Peak)</label>
+                            <select class="form-select form-select-sm" id="superChillReduceWeek" multiple size="4">
+                                <option value="">Run simulation first...</option>
+                            </select>
+                            <small class="text-muted">Hold Ctrl to select multiple weeks</small>
+                        </div>
+                        <div id="superChillWeekUnitsContainer" class="mb-2" style="display: none;">
+                            <!-- Dynamic week selection and units inputs will appear here -->
                         </div>
                         <small class="text-muted d-block mb-2"><i class="bi bi-info-circle"></i> Transfer demand from peak week to an earlier week (up to 4 weeks before) for super chilling pre-production.</small>
                         <div class="d-flex gap-1">
-                            <button class="btn btn-sm btn-outline-info flex-grow-1" id="superChillAddBtn" onclick="addSuperChillAdjustment()">
-                                <i class="bi bi-plus-lg"></i> Add Super Chill Adjustment
+                            <button class="btn btn-sm btn-outline-info flex-grow-1" id="superChillAddBtn" onclick="addSuperChillAdjustments()">
+                                <i class="bi bi-plus-lg"></i> Add Modification
                             </button>
                             <button class="btn btn-sm btn-outline-secondary" id="superChillCancelBtn" onclick="cancelEditSuperChillAdjustment()" style="display: none;">
                                 <i class="bi bi-x-lg"></i>
@@ -297,28 +287,20 @@
                 
                 <div class="card bg-light mb-3">
                     <div class="card-body p-2">
-                        <div class="row mb-2">
-                            <div class="col-6">
-                                <label class="form-label small mb-1">Reduce Week (Peak)</label>
-                                <select class="form-select form-select-sm" id="frozenReduceWeek">
-                                    <option value="">Select week...</option>
-                                </select>
-                            </div>
-                            <div class="col-6">
-                                <label class="form-label small mb-1">Increase Week (Pre-prod)</label>
-                                <select class="form-select form-select-sm" id="frozenIncreaseWeek">
-                                    <option value="">Select week...</option>
-                                </select>
-                            </div>
-                        </div>
                         <div class="mb-2">
-                            <label class="form-label small mb-1">Units to Transfer</label>
-                            <input type="number" class="form-control form-control-sm" id="frozenUnits" value="0" step="100">
+                            <label class="form-label small mb-1">Select Reduce Week(s) (Peak)</label>
+                            <select class="form-select form-select-sm" id="frozenReduceWeek" multiple size="4">
+                                <option value="">Run simulation first...</option>
+                            </select>
+                            <small class="text-muted">Hold Ctrl to select multiple weeks</small>
+                        </div>
+                        <div id="frozenWeekUnitsContainer" class="mb-2" style="display: none;">
+                            <!-- Dynamic week selection and units inputs will appear here -->
                         </div>
                         <small class="text-muted d-block mb-2"><i class="bi bi-info-circle"></i> Transfer demand from peak week to any earlier week for frozen pre-production (no week limit).</small>
                         <div class="d-flex gap-1">
-                            <button class="btn btn-sm btn-outline-primary flex-grow-1" id="frozenAddBtn" onclick="addFrozenAdjustment()" style="background-color: #e3f2fd;">
-                                <i class="bi bi-plus-lg"></i> Add Frozen Adjustment
+                            <button class="btn btn-sm btn-outline-primary flex-grow-1" id="frozenAddBtn" onclick="addFrozenAdjustments()" style="background-color: #e3f2fd;">
+                                <i class="bi bi-plus-lg"></i> Add Modification
                             </button>
                             <button class="btn btn-sm btn-outline-secondary" id="frozenCancelBtn" onclick="cancelEditFrozenAdjustment()" style="display: none;">
                                 <i class="bi bi-x-lg"></i>
@@ -2057,57 +2039,54 @@
     }
     
     // Stock Adjustment Functions
-    function addStockAdjustment() {
-        const weekSelect = document.getElementById('stockWeekSelect');
-        const units = parseFloat(document.getElementById('stockUnits').value);
+    function addStockAdjustments() {
+        const weekInputs = document.querySelectorAll('[data-stock-week]');
         
-        if (!weekSelect.value) {
-            alert('Please select a week');
+        if (weekInputs.length === 0) {
+            alert('Please select at least one week');
             return;
         }
         
-        if (isNaN(units) || units === 0) {
-            alert('Please enter a valid number of units (non-zero)');
-            return;
-        }
+        let addedCount = 0;
         
-        const week = weekSelect.value;
-        const weekIndex = availableWeeks.indexOf(week);
-        
-        if (weekIndex === availableWeeks.length - 1) {
-            alert('Cannot adjust the last week as there is no following week to balance');
-            return;
-        }
-        
-        const nextWeek = availableWeeks[weekIndex + 1];
-        
-        if (editingStockId !== null) {
-            // Update existing adjustment
-            const adjIndex = stockAdjustments.findIndex(a => a.id === editingStockId);
-            if (adjIndex !== -1) {
-                stockAdjustments[adjIndex] = {
-                    id: editingStockId,
-                    week: week,
-                    next_week: nextWeek,
-                    units: units
-                };
+        weekInputs.forEach(input => {
+            const week = input.dataset.stockWeek;
+            const units = parseFloat(input.value);
+            
+            if (isNaN(units) || units === 0) {
+                return; // Skip weeks with no/zero units
             }
-            editingStockId = null;
-            document.getElementById('stockAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Stock Adjustment';
-            document.getElementById('stockCancelBtn').style.display = 'none';
-        } else {
+            
+            const weekIndex = availableWeeks.indexOf(week);
+            
+            if (weekIndex === availableWeeks.length - 1) {
+                return; // Cannot adjust the last week
+            }
+            
+            const nextWeek = availableWeeks[weekIndex + 1];
+            
             // Create new adjustment
-            const adjId = Date.now();
+            const adjId = Date.now() + addedCount;
             stockAdjustments.push({
                 id: adjId,
                 week: week,
                 next_week: nextWeek,
                 units: units
             });
+            addedCount++;
+        });
+        
+        if (addedCount === 0) {
+            alert('Please enter at least one non-zero unit value');
+            return;
         }
         
         updateStockAdjustmentsList();
-        document.getElementById('stockUnits').value = 0;
+        
+        // Reset form
+        document.getElementById('stockWeekSelect').selectedIndex = -1;
+        document.getElementById('stockWeekUnitsContainer').style.display = 'none';
+        document.getElementById('stockWeekUnitsContainer').innerHTML = '';
         
         // Re-render chart if we have results
         if (lastSimulationResult) {
@@ -2115,23 +2094,44 @@
         }
     }
     
+    // Legacy single-week function for editing
+    function addStockAdjustment() {
+        addStockAdjustments();
+    }
+    
     function editStockAdjustment(adjId) {
         const adj = stockAdjustments.find(a => a.id === adjId);
         if (!adj) return;
         
-        editingStockId = adjId;
-        document.getElementById('stockWeekSelect').value = adj.week;
-        document.getElementById('stockUnits').value = adj.units;
+        // For editing, select the single week and show its value
+        const select = document.getElementById('stockWeekSelect');
+        Array.from(select.options).forEach(opt => {
+            opt.selected = opt.value === adj.week;
+        });
+        updateStockWeekUnitsContainer();
+        
+        // Set the value in the input
+        const input = document.querySelector(`[data-stock-week="${adj.week}"]`);
+        if (input) {
+            input.value = adj.units;
+        }
+        
+        // Remove the adjustment so it can be re-added on save
+        stockAdjustments = stockAdjustments.filter(a => a.id !== adjId);
+        updateStockAdjustmentsList();
         
         document.getElementById('stockAddBtn').innerHTML = '<i class="bi bi-check-lg"></i> Update Adjustment';
         document.getElementById('stockCancelBtn').style.display = 'inline-block';
+        editingStockId = adjId; // Store for potential cancel
     }
     
     function cancelEditStockAdjustment() {
         editingStockId = null;
-        document.getElementById('stockAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Stock Adjustment';
+        document.getElementById('stockAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Modification';
         document.getElementById('stockCancelBtn').style.display = 'none';
-        document.getElementById('stockUnits').value = 0;
+        document.getElementById('stockWeekSelect').selectedIndex = -1;
+        document.getElementById('stockWeekUnitsContainer').style.display = 'none';
+        document.getElementById('stockWeekUnitsContainer').innerHTML = '';
     }
     
     function removeStockAdjustment(adjId) {
@@ -2184,8 +2184,10 @@
     
     function updateStockWeekSelect() {
         const select = document.getElementById('stockWeekSelect');
-        select.innerHTML = '<option value="">Select week...</option>' + 
-            availableWeeks.slice(0, -1).map(week => `<option value="${week}">${week}</option>`).join('');
+        select.innerHTML = availableWeeks.slice(0, -1).map(week => `<option value="${week}">${week}</option>`).join('');
+        
+        // Add event listener for multi-select change
+        select.onchange = updateStockWeekUnitsContainer;
         
         // Also update super chill week selects
         updateSuperChillWeekSelects();
@@ -2194,39 +2196,86 @@
         updateFrozenWeekSelects();
     }
     
-    function updateSuperChillWeekSelects() {
-        const reduceSelect = document.getElementById('superChillReduceWeek');
-        const increaseSelect = document.getElementById('superChillIncreaseWeek');
+    function updateStockWeekUnitsContainer() {
+        const select = document.getElementById('stockWeekSelect');
+        const container = document.getElementById('stockWeekUnitsContainer');
+        const selectedWeeks = Array.from(select.selectedOptions).map(opt => opt.value);
         
-        // Reduce week can be any week except the first 4 (need at least 4 weeks before)
-        reduceSelect.innerHTML = '<option value="">Select week...</option>' + 
-            availableWeeks.slice(4).map(week => `<option value="${week}">${week}</option>`).join('');
-        
-        // Increase week options will be populated based on reduce week selection
-        increaseSelect.innerHTML = '<option value="">Select reduce week first...</option>';
-        
-        // Add event listener for reduce week change
-        reduceSelect.onchange = updateIncreaseWeekOptions;
-    }
-    
-    function updateIncreaseWeekOptions() {
-        const reduceWeek = document.getElementById('superChillReduceWeek').value;
-        const increaseSelect = document.getElementById('superChillIncreaseWeek');
-        
-        if (!reduceWeek) {
-            increaseSelect.innerHTML = '<option value="">Select reduce week first...</option>';
+        if (selectedWeeks.length === 0) {
+            container.style.display = 'none';
+            container.innerHTML = '';
             return;
         }
         
-        const reduceIndex = availableWeeks.indexOf(reduceWeek);
-        // Allow selection of 1 to 4 weeks before the reduce week
-        const minIndex = Math.max(0, reduceIndex - 4);
-        const eligibleWeeks = availableWeeks.slice(minIndex, reduceIndex);
+        container.style.display = 'block';
+        container.innerHTML = '<label class="form-label small mb-1">Units to Add for each Week</label>' + 
+            selectedWeeks.map(week => {
+                const weekIndex = availableWeeks.indexOf(week);
+                const nextWeek = weekIndex < availableWeeks.length - 1 ? availableWeeks[weekIndex + 1] : null;
+                return `
+                    <div class="row mb-1 align-items-center">
+                        <div class="col-4">
+                            <small class="text-muted">${week}</small>
+                            ${nextWeek ? `<br><small class="text-muted" style="font-size: 0.7rem;">→ ${nextWeek}</small>` : ''}
+                        </div>
+                        <div class="col-8">
+                            <input type="number" class="form-control form-control-sm" data-stock-week="${week}" value="0" step="100" placeholder="Units">
+                        </div>
+                    </div>
+                `;
+            }).join('');
+    }
+    
+    function updateSuperChillWeekSelects() {
+        const reduceSelect = document.getElementById('superChillReduceWeek');
         
-        increaseSelect.innerHTML = '<option value="">Select week...</option>' + 
-            eligibleWeeks.map((week, i) => {
-                const weeksApart = reduceIndex - (minIndex + i);
-                return `<option value="${week}">${week} (${weeksApart} week${weeksApart > 1 ? 's' : ''} before)</option>`;
+        // Reduce week can be any week except the first 4 (need at least 4 weeks before)
+        reduceSelect.innerHTML = availableWeeks.slice(4).map(week => `<option value="${week}">${week}</option>`).join('');
+        
+        // Add event listener for reduce week change (multi-select)
+        reduceSelect.onchange = updateSuperChillWeekUnitsContainer;
+    }
+    
+    function updateSuperChillWeekUnitsContainer() {
+        const reduceSelect = document.getElementById('superChillReduceWeek');
+        const container = document.getElementById('superChillWeekUnitsContainer');
+        const selectedWeeks = Array.from(reduceSelect.selectedOptions).map(opt => opt.value);
+        
+        if (selectedWeeks.length === 0) {
+            container.style.display = 'none';
+            container.innerHTML = '';
+            return;
+        }
+        
+        container.style.display = 'block';
+        container.innerHTML = '<label class="form-label small mb-1">For each week, select pre-prod week and units</label>' + 
+            selectedWeeks.map(reduceWeek => {
+                const reduceIndex = availableWeeks.indexOf(reduceWeek);
+                // Allow selection of 1 to 4 weeks before the reduce week
+                const minIndex = Math.max(0, reduceIndex - 4);
+                const eligibleWeeks = availableWeeks.slice(minIndex, reduceIndex);
+                
+                return `
+                    <div class="card bg-white mb-2 p-2">
+                        <div class="d-flex align-items-center mb-1">
+                            <span class="badge bg-danger me-2">${reduceWeek}</span>
+                            <small class="text-muted">Reduce (Peak)</small>
+                        </div>
+                        <div class="row">
+                            <div class="col-6">
+                                <select class="form-select form-select-sm" data-superchill-reduce="${reduceWeek}" data-superchill-increase>
+                                    ${eligibleWeeks.map((week, i) => {
+                                        const weeksApart = reduceIndex - (minIndex + i);
+                                        return `<option value="${week}">${week} (${weeksApart}W before)</option>`;
+                                    }).join('')}
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <input type="number" class="form-control form-control-sm" data-superchill-reduce="${reduceWeek}" data-superchill-units value="0" step="100" placeholder="Units">
+                            </div>
+                        </div>
+                    </div>
+                `;
             }).join('');
     }
     
@@ -2273,59 +2322,48 @@
     }
     
     // Super Chill Adjustment Functions
-    function addSuperChillAdjustment() {
-        const reduceWeek = document.getElementById('superChillReduceWeek').value;
-        const increaseWeek = document.getElementById('superChillIncreaseWeek').value;
-        const units = parseFloat(document.getElementById('superChillUnits').value);
+    function addSuperChillAdjustments() {
+        const container = document.getElementById('superChillWeekUnitsContainer');
+        const weekCards = container.querySelectorAll('[data-superchill-reduce]');
         
-        if (!reduceWeek) {
-            alert('Please select a week to reduce demand from (peak week)');
+        if (weekCards.length === 0) {
+            alert('Please select at least one reduce week');
             return;
         }
         
-        if (!increaseWeek) {
-            alert('Please select a week to increase demand (pre-production week)');
-            return;
-        }
+        let addedCount = 0;
+        const processedWeeks = new Set();
         
-        if (isNaN(units) || units <= 0) {
-            alert('Please enter a valid positive number of units to transfer');
-            return;
-        }
+        // Group by reduce week
+        const reduceWeeks = [...new Set(Array.from(weekCards).map(el => el.dataset.superchillReduce))];
         
-        // Validate that increase week is before reduce week
-        const reduceIndex = availableWeeks.indexOf(reduceWeek);
-        const increaseIndex = availableWeeks.indexOf(increaseWeek);
-        
-        if (increaseIndex >= reduceIndex) {
-            alert('Increase week must be before the reduce week');
-            return;
-        }
-        
-        const weeksApart = reduceIndex - increaseIndex;
-        if (weeksApart > 4) {
-            alert('Super chilling allows maximum 4 weeks between reduce and increase weeks');
-            return;
-        }
-        
-        if (editingSuperChillId !== null) {
-            // Update existing adjustment
-            const adjIndex = superChillAdjustments.findIndex(a => a.id === editingSuperChillId);
-            if (adjIndex !== -1) {
-                superChillAdjustments[adjIndex] = {
-                    id: editingSuperChillId,
-                    reduce_week: reduceWeek,
-                    increase_week: increaseWeek,
-                    units: units,
-                    weeks_apart: weeksApart
-                };
+        reduceWeeks.forEach(reduceWeek => {
+            const increaseSelect = container.querySelector(`[data-superchill-reduce="${reduceWeek}"][data-superchill-increase]`);
+            const unitsInput = container.querySelector(`[data-superchill-reduce="${reduceWeek}"][data-superchill-units]`);
+            
+            if (!increaseSelect || !unitsInput) return;
+            
+            const increaseWeek = increaseSelect.value;
+            const units = parseFloat(unitsInput.value);
+            
+            if (!increaseWeek || isNaN(units) || units <= 0) {
+                return; // Skip invalid entries
             }
-            editingSuperChillId = null;
-            document.getElementById('superChillAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Super Chill Adjustment';
-            document.getElementById('superChillCancelBtn').style.display = 'none';
-        } else {
+            
+            const reduceIndex = availableWeeks.indexOf(reduceWeek);
+            const increaseIndex = availableWeeks.indexOf(increaseWeek);
+            
+            if (increaseIndex >= reduceIndex) {
+                return; // Invalid: increase week must be before reduce week
+            }
+            
+            const weeksApart = reduceIndex - increaseIndex;
+            if (weeksApart > 4) {
+                return; // Super chilling max 4 weeks
+            }
+            
             // Create new adjustment
-            const adjId = Date.now();
+            const adjId = Date.now() + addedCount;
             superChillAdjustments.push({
                 id: adjId,
                 reduce_week: reduceWeek,
@@ -2333,12 +2371,20 @@
                 units: units,
                 weeks_apart: weeksApart
             });
+            addedCount++;
+        });
+        
+        if (addedCount === 0) {
+            alert('Please enter valid units (positive numbers) for at least one week');
+            return;
         }
         
         updateSuperChillAdjustmentsList();
-        document.getElementById('superChillUnits').value = 0;
-        document.getElementById('superChillReduceWeek').value = '';
-        document.getElementById('superChillIncreaseWeek').innerHTML = '<option value="">Select reduce week first...</option>';
+        
+        // Reset form
+        document.getElementById('superChillReduceWeek').selectedIndex = -1;
+        container.style.display = 'none';
+        container.innerHTML = '';
         
         // Re-render chart if we have results
         if (lastSimulationResult) {
@@ -2346,27 +2392,46 @@
         }
     }
     
+    // Legacy single-week function for editing
+    function addSuperChillAdjustment() {
+        addSuperChillAdjustments();
+    }
+    
     function editSuperChillAdjustment(adjId) {
         const adj = superChillAdjustments.find(a => a.id === adjId);
         if (!adj) return;
         
-        editingSuperChillId = adjId;
-        document.getElementById('superChillReduceWeek').value = adj.reduce_week;
-        updateIncreaseWeekOptions();
-        document.getElementById('superChillIncreaseWeek').value = adj.increase_week;
-        document.getElementById('superChillUnits').value = adj.units;
+        // For editing, select the single reduce week and show its value
+        const select = document.getElementById('superChillReduceWeek');
+        Array.from(select.options).forEach(opt => {
+            opt.selected = opt.value === adj.reduce_week;
+        });
+        updateSuperChillWeekUnitsContainer();
+        
+        // Set the values in the inputs
+        const container = document.getElementById('superChillWeekUnitsContainer');
+        const increaseSelect = container.querySelector(`[data-superchill-reduce="${adj.reduce_week}"][data-superchill-increase]`);
+        const unitsInput = container.querySelector(`[data-superchill-reduce="${adj.reduce_week}"][data-superchill-units]`);
+        
+        if (increaseSelect) increaseSelect.value = adj.increase_week;
+        if (unitsInput) unitsInput.value = adj.units;
+        
+        // Remove the adjustment so it can be re-added on save
+        superChillAdjustments = superChillAdjustments.filter(a => a.id !== adjId);
+        updateSuperChillAdjustmentsList();
         
         document.getElementById('superChillAddBtn').innerHTML = '<i class="bi bi-check-lg"></i> Update Adjustment';
         document.getElementById('superChillCancelBtn').style.display = 'inline-block';
+        editingSuperChillId = adjId;
     }
     
     function cancelEditSuperChillAdjustment() {
         editingSuperChillId = null;
-        document.getElementById('superChillAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Super Chill Adjustment';
+        document.getElementById('superChillAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Modification';
         document.getElementById('superChillCancelBtn').style.display = 'none';
-        document.getElementById('superChillUnits').value = 0;
-        document.getElementById('superChillReduceWeek').value = '';
-        document.getElementById('superChillIncreaseWeek').innerHTML = '<option value="">Select reduce week first...</option>';
+        document.getElementById('superChillReduceWeek').selectedIndex = -1;
+        document.getElementById('superChillWeekUnitsContainer').style.display = 'none';
+        document.getElementById('superChillWeekUnitsContainer').innerHTML = '';
     }
     
     function removeSuperChillAdjustment(adjId) {
@@ -2429,88 +2494,94 @@
     // Frozen Adjustment Functions
     function updateFrozenWeekSelects() {
         const reduceSelect = document.getElementById('frozenReduceWeek');
-        const increaseSelect = document.getElementById('frozenIncreaseWeek');
         
         // Reduce week can be any week except the first one
-        reduceSelect.innerHTML = '<option value="">Select week...</option>' + 
-            availableWeeks.slice(1).map(week => `<option value="${week}">${week}</option>`).join('');
+        reduceSelect.innerHTML = availableWeeks.slice(1).map(week => `<option value="${week}">${week}</option>`).join('');
         
-        // Increase week options will be populated based on reduce week selection
-        increaseSelect.innerHTML = '<option value="">Select reduce week first...</option>';
-        
-        // Add event listener for reduce week change
-        reduceSelect.onchange = updateFrozenIncreaseWeekOptions;
+        // Add event listener for reduce week change (multi-select)
+        reduceSelect.onchange = updateFrozenWeekUnitsContainer;
     }
     
-    function updateFrozenIncreaseWeekOptions() {
-        const reduceWeek = document.getElementById('frozenReduceWeek').value;
-        const increaseSelect = document.getElementById('frozenIncreaseWeek');
+    function updateFrozenWeekUnitsContainer() {
+        const reduceSelect = document.getElementById('frozenReduceWeek');
+        const container = document.getElementById('frozenWeekUnitsContainer');
+        const selectedWeeks = Array.from(reduceSelect.selectedOptions).map(opt => opt.value);
         
-        if (!reduceWeek) {
-            increaseSelect.innerHTML = '<option value="">Select reduce week first...</option>';
+        if (selectedWeeks.length === 0) {
+            container.style.display = 'none';
+            container.innerHTML = '';
             return;
         }
         
-        const reduceIndex = availableWeeks.indexOf(reduceWeek);
-        // Allow selection of any week before the reduce week (no limit)
-        const eligibleWeeks = availableWeeks.slice(0, reduceIndex);
-        
-        increaseSelect.innerHTML = '<option value="">Select week...</option>' + 
-            eligibleWeeks.map((week, i) => {
-                const weeksApart = reduceIndex - i;
-                return `<option value="${week}">${week} (${weeksApart} week${weeksApart > 1 ? 's' : ''} before)</option>`;
+        container.style.display = 'block';
+        container.innerHTML = '<label class="form-label small mb-1">For each week, select pre-prod week and units</label>' + 
+            selectedWeeks.map(reduceWeek => {
+                const reduceIndex = availableWeeks.indexOf(reduceWeek);
+                // Allow selection of any week before the reduce week (no limit)
+                const eligibleWeeks = availableWeeks.slice(0, reduceIndex);
+                
+                return `
+                    <div class="card bg-white mb-2 p-2">
+                        <div class="d-flex align-items-center mb-1">
+                            <span class="badge bg-primary me-2">${reduceWeek}</span>
+                            <small class="text-muted">Reduce (Peak)</small>
+                        </div>
+                        <div class="row">
+                            <div class="col-6">
+                                <select class="form-select form-select-sm" data-frozen-reduce="${reduceWeek}" data-frozen-increase>
+                                    ${eligibleWeeks.map((week, i) => {
+                                        const weeksApart = reduceIndex - i;
+                                        return `<option value="${week}">${week} (${weeksApart}W before)</option>`;
+                                    }).join('')}
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <input type="number" class="form-control form-control-sm" data-frozen-reduce="${reduceWeek}" data-frozen-units value="0" step="100" placeholder="Units">
+                            </div>
+                        </div>
+                    </div>
+                `;
             }).join('');
     }
     
-    function addFrozenAdjustment() {
-        const reduceWeek = document.getElementById('frozenReduceWeek').value;
-        const increaseWeek = document.getElementById('frozenIncreaseWeek').value;
-        const units = parseFloat(document.getElementById('frozenUnits').value);
+    function addFrozenAdjustments() {
+        const container = document.getElementById('frozenWeekUnitsContainer');
+        const weekCards = container.querySelectorAll('[data-frozen-reduce]');
         
-        if (!reduceWeek) {
-            alert('Please select a week to reduce demand from (peak week)');
+        if (weekCards.length === 0) {
+            alert('Please select at least one reduce week');
             return;
         }
         
-        if (!increaseWeek) {
-            alert('Please select a week to increase demand (pre-production week)');
-            return;
-        }
+        let addedCount = 0;
         
-        if (isNaN(units) || units <= 0) {
-            alert('Please enter a valid positive number of units to transfer');
-            return;
-        }
+        // Group by reduce week
+        const reduceWeeks = [...new Set(Array.from(weekCards).map(el => el.dataset.frozenReduce))];
         
-        // Validate that increase week is before reduce week
-        const reduceIndex = availableWeeks.indexOf(reduceWeek);
-        const increaseIndex = availableWeeks.indexOf(increaseWeek);
-        
-        if (increaseIndex >= reduceIndex) {
-            alert('Increase week must be before the reduce week');
-            return;
-        }
-        
-        const weeksApart = reduceIndex - increaseIndex;
-        
-        if (editingFrozenId !== null) {
-            // Update existing adjustment
-            const adjIndex = frozenAdjustments.findIndex(a => a.id === editingFrozenId);
-            if (adjIndex !== -1) {
-                frozenAdjustments[adjIndex] = {
-                    id: editingFrozenId,
-                    reduce_week: reduceWeek,
-                    increase_week: increaseWeek,
-                    units: units,
-                    weeks_apart: weeksApart
-                };
+        reduceWeeks.forEach(reduceWeek => {
+            const increaseSelect = container.querySelector(`[data-frozen-reduce="${reduceWeek}"][data-frozen-increase]`);
+            const unitsInput = container.querySelector(`[data-frozen-reduce="${reduceWeek}"][data-frozen-units]`);
+            
+            if (!increaseSelect || !unitsInput) return;
+            
+            const increaseWeek = increaseSelect.value;
+            const units = parseFloat(unitsInput.value);
+            
+            if (!increaseWeek || isNaN(units) || units <= 0) {
+                return; // Skip invalid entries
             }
-            editingFrozenId = null;
-            document.getElementById('frozenAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Frozen Adjustment';
-            document.getElementById('frozenCancelBtn').style.display = 'none';
-        } else {
+            
+            const reduceIndex = availableWeeks.indexOf(reduceWeek);
+            const increaseIndex = availableWeeks.indexOf(increaseWeek);
+            
+            if (increaseIndex >= reduceIndex) {
+                return; // Invalid: increase week must be before reduce week
+            }
+            
+            const weeksApart = reduceIndex - increaseIndex;
+            
             // Create new adjustment
-            const adjId = Date.now();
+            const adjId = Date.now() + addedCount;
             frozenAdjustments.push({
                 id: adjId,
                 reduce_week: reduceWeek,
@@ -2518,12 +2589,20 @@
                 units: units,
                 weeks_apart: weeksApart
             });
+            addedCount++;
+        });
+        
+        if (addedCount === 0) {
+            alert('Please enter valid units (positive numbers) for at least one week');
+            return;
         }
         
         updateFrozenAdjustmentsList();
-        document.getElementById('frozenUnits').value = 0;
-        document.getElementById('frozenReduceWeek').value = '';
-        document.getElementById('frozenIncreaseWeek').innerHTML = '<option value="">Select reduce week first...</option>';
+        
+        // Reset form
+        document.getElementById('frozenReduceWeek').selectedIndex = -1;
+        container.style.display = 'none';
+        container.innerHTML = '';
         
         // Re-render chart if we have results
         if (lastSimulationResult) {
@@ -2531,27 +2610,46 @@
         }
     }
     
+    // Legacy single-week function for editing
+    function addFrozenAdjustment() {
+        addFrozenAdjustments();
+    }
+    
     function editFrozenAdjustment(adjId) {
         const adj = frozenAdjustments.find(a => a.id === adjId);
         if (!adj) return;
         
-        editingFrozenId = adjId;
-        document.getElementById('frozenReduceWeek').value = adj.reduce_week;
-        updateFrozenIncreaseWeekOptions();
-        document.getElementById('frozenIncreaseWeek').value = adj.increase_week;
-        document.getElementById('frozenUnits').value = adj.units;
+        // For editing, select the single reduce week and show its value
+        const select = document.getElementById('frozenReduceWeek');
+        Array.from(select.options).forEach(opt => {
+            opt.selected = opt.value === adj.reduce_week;
+        });
+        updateFrozenWeekUnitsContainer();
+        
+        // Set the values in the inputs
+        const container = document.getElementById('frozenWeekUnitsContainer');
+        const increaseSelect = container.querySelector(`[data-frozen-reduce="${adj.reduce_week}"][data-frozen-increase]`);
+        const unitsInput = container.querySelector(`[data-frozen-reduce="${adj.reduce_week}"][data-frozen-units]`);
+        
+        if (increaseSelect) increaseSelect.value = adj.increase_week;
+        if (unitsInput) unitsInput.value = adj.units;
+        
+        // Remove the adjustment so it can be re-added on save
+        frozenAdjustments = frozenAdjustments.filter(a => a.id !== adjId);
+        updateFrozenAdjustmentsList();
         
         document.getElementById('frozenAddBtn').innerHTML = '<i class="bi bi-check-lg"></i> Update Adjustment';
         document.getElementById('frozenCancelBtn').style.display = 'inline-block';
+        editingFrozenId = adjId;
     }
     
     function cancelEditFrozenAdjustment() {
         editingFrozenId = null;
-        document.getElementById('frozenAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Frozen Adjustment';
+        document.getElementById('frozenAddBtn').innerHTML = '<i class="bi bi-plus-lg"></i> Add Modification';
         document.getElementById('frozenCancelBtn').style.display = 'none';
-        document.getElementById('frozenUnits').value = 0;
-        document.getElementById('frozenReduceWeek').value = '';
-        document.getElementById('frozenIncreaseWeek').innerHTML = '<option value="">Select reduce week first...</option>';
+        document.getElementById('frozenReduceWeek').selectedIndex = -1;
+        document.getElementById('frozenWeekUnitsContainer').style.display = 'none';
+        document.getElementById('frozenWeekUnitsContainer').innerHTML = '';
     }
     
     function removeFrozenAdjustment(adjId) {
